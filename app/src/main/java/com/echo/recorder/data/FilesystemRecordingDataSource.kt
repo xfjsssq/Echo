@@ -52,7 +52,7 @@ class FilesystemRecordingDataSource(
 
     override fun delete(id: String): Boolean {
         val target = _state.value.firstOrNull { it.id == id } ?: return false
-        val f = File(target.fileUrl.removePrefix("file://"))
+        val f = File(java.net.URI(target.fileUrl))
         if (f.exists()) f.delete()
         _state.value = _state.value.filterNot { it.id == id }
         return true
