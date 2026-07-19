@@ -1,0 +1,28 @@
+# build
+build/
+.gradle/
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+
+# temporary build artifacts we don't want to ship
+_main_cp.txt
+_test_cp_jars.txt
+_test_cp.txt
+_cp.txt
+
+# local test wrappers (not part of shipped product)
+test_runner.sh
+_dump_cp.sh
+run_junit_direct.bat
+Run-JUnit.ps1
+*.bat
+
+# secrets (never commit)
+.github_token
+*_token*
