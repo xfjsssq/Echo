@@ -1,6 +1,7 @@
 package com.echo.recorder.data
 
 import com.echo.recorder.domain.model.Recording
+import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.domain.recording.RecordingRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -21,4 +22,7 @@ class RecordingRepositoryImpl(
         ds.upsert(file, durationMs, System.currentTimeMillis())
 
     override suspend fun delete(id: String): Boolean = ds.delete(id)
+
+    override suspend fun setCategory(id: String, category: RecordingCategory): Recording? =
+        ds.setCategory(id, category)
 }

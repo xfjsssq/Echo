@@ -1,6 +1,7 @@
 package com.echo.recorder.domain.recording
 
 import com.echo.recorder.domain.model.Recording
+import com.echo.recorder.domain.model.RecordingCategory
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 
@@ -16,4 +17,7 @@ interface RecordingRepository {
 
     /** 删文件 + 删库. 成功=true, 找不到=false. */
     suspend fun delete(id: String): Boolean
+
+    /** 把一条录音在临时/长期之间移动. 返回新 Recording, 找不到=null. */
+    suspend fun setCategory(id: String, category: RecordingCategory): Recording?
 }

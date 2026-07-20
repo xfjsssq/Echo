@@ -1,6 +1,7 @@
 package com.echo.recorder.data
 
 import com.echo.recorder.domain.model.Recording
+import com.echo.recorder.domain.model.RecordingCategory
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -11,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 interface RecordingDataSource {
     val state: Flow<List<Recording>>
 
-    /** 扫盘一次. */
+    /** 扫盘一次 (pending/longterm/unprocessed). */
     fun load()
 
     fun getById(id: String): Recording?
@@ -21,4 +22,7 @@ interface RecordingDataSource {
 
     /** 删文件 + 删库. 成功=true, 找不到=false. */
     fun delete(id: String): Boolean
+
+    /** 把一条录音在临时/长期之间移动 (改物理目录 + 改分类). 返回新 Recording. */
+    fun setCategory(id: String, category: RecordingCategory): Recording?
 }

@@ -8,3 +8,14 @@ fun formatElapsed(ms: Long): String {
     val s = totalSec % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
 }
+
+/** epoch ms -> yyyy-MM-dd HH:mm (用于恢复弹窗). */
+fun fmtTime(epochMs: Long): String {
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = epochMs }
+    fun p(n: Int) = n.toString().padStart(2, '0')
+    return cal.get(java.util.Calendar.YEAR).toString() + "-" +
+        p(cal.get(java.util.Calendar.MONTH) + 1) + "-" +
+        p(cal.get(java.util.Calendar.DAY_OF_MONTH)) + " " +
+        p(cal.get(java.util.Calendar.HOUR_OF_DAY)) + ":" +
+        p(cal.get(java.util.Calendar.MINUTE))
+}

@@ -1,25 +1,25 @@
 package com.echo.recorder.ui.record
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,24 +27,25 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.echo.recorder.service.RecordingService
 import com.echo.recorder.ui.formatElapsed
+import com.echo.recorder.ui.fmtTime
 
 /**
- * 录音页. 居中圆形录音按钮 + 顶部 AppBar.
- *
- * 权限本身由宿主 Activity 的 launcher 处理; 本组件只读 VM 中的 [RecordUiState.hasPermission]
- * 来决定按钮是否可用与提示文案.
+ * 录音页. 三态界面, 与通知栏 100% 同步:
+ * - IDLE       -> 一个大"开始"按钮.
+ * - BUFFERING  -> 经过时长 + 一个大"暂停"按钮.
+ * - REVIEW     -> 两个按钮"保存" + "删除".
+ * 右下角不起眼的"退出"图标 (密码门控占位).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +54,26 @@ fun RecordScreen(
     onRequestPermission: () -> Unit,
     onOpenList: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onExit: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // 冷启动恢复对话框 (阻塞进入).
+    state.pendingRecovery?.let { rec ->
+        AlertDialog(
+            onDismissRequest = { /* 必须选择, 不可外部关闭 */ },
+            title = { Text("你好, 上次退出前的回音小E帮你留下了") },
+            text = {
+                Text("时间: ${fmtTime(rec.createdAt)}\n要留着它吗?")
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.recoverKeep() }) { Text("保留") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.recoverDiscard() }) { Text("删除") }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -71,39 +90,44 @@ fun RecordScreen(
             )
         },
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
         ) {
-            if (state.isRecording) {
-                Text(
-                    text = formatElapsed(state.elapsedMs),
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 32.dp),
-                )
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                when (state.phase) {
+                    RecordingService.Phase.IDLE -> IdleContent(
+                        hasPermission = state.hasPermission,
+                        onStart = {
+                            if (!state.hasPermission) onRequestPermission()
+                            else viewModel.onStartPressed()
+                        },
+                    )
+                    RecordingService.Phase.BUFFERING -> BufferingContent(
+                        elapsedMs = state.elapsedMs,
+                        onPause = { viewModel.onPausePressed() },
+                    )
+                    RecordingService.Phase.REVIEW -> ReviewContent(
+                        onSave = { viewModel.onSavePressed() },
+                        onDelete = { viewModel.onDeletePressed() },
+                    )
+                }
             }
 
-            RecordButton(
-                isRecording = state.isRecording,
-                enabled = state.hasPermission,
-                onClick = {
-                    if (!state.hasPermission) {
-                        onRequestPermission()
-                    } else {
-                        viewModel.onRecordPressed()
-                    }
-                },
-            )
-
-            if (!state.hasPermission) {
-                Text(
-                    text = "需要麦克风权限才能录音",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 24.dp),
+            // 右下角不起眼的退出图标.
+            IconButton(
+                onClick = onExit,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            ) {
+                Icon(
+                    Icons.Filled.ExitToApp,
+                    contentDescription = "彻底退出",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -111,41 +135,74 @@ fun RecordScreen(
 }
 
 @Composable
-private fun RecordButton(
-    isRecording: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val pulse = rememberInfiniteTransition(label = "pulse")
-    val scale by pulse.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.18f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 700),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "scale",
-    )
-    val bg = when {
-        !enabled -> Color.Gray
-        isRecording -> Color(0xFFD32F2F)
-        else -> MaterialTheme.colorScheme.primary
+private fun IdleContent(hasPermission: Boolean, onStart: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        FloatingActionButton(
+            onClick = onStart,
+            modifier = Modifier.size(120.dp),
+            shape = CircleShape,
+            containerColor = if (hasPermission) MaterialTheme.colorScheme.primary else Color.Gray,
+        ) {
+            Text("开始", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+        if (!hasPermission) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "需要麦克风权限才能录音",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
-    val appliedScale = if (isRecording) scale else 1f
+}
 
-    IconButton(
-        onClick = onClick,
-        enabled = enabled || isRecording,
-        modifier = Modifier
-            .size(120.dp)
-            .scale(appliedScale)
-            .background(bg, CircleShape),
-    ) {
-        Icon(
-            imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
-            contentDescription = if (isRecording) "停止录音" else "开始录音",
-            tint = Color.White,
-            modifier = Modifier.size(56.dp),
+@Composable
+private fun BufferingContent(elapsedMs: Long, onPause: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = formatElapsed(elapsedMs),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(bottom = 32.dp),
         )
+        FloatingActionButton(
+            onClick = onPause,
+            modifier = Modifier.size(120.dp),
+            shape = CircleShape,
+            containerColor = Color(0xFFD32F2F),
+        ) {
+            Icon(
+                Icons.Filled.Pause,
+                contentDescription = "暂停",
+                tint = Color.White,
+                modifier = Modifier.size(56.dp),
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("即时回放运行中", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ReviewContent(onSave: () -> Unit, onDelete: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "已暂停, 请决定这段录音的去留",
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(bottom = 32.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+            ExtendedFloatingActionButton(
+                onClick = onSave,
+                icon = { Icon(Icons.Filled.List, contentDescription = null) },
+                text = { Text("保存") },
+                containerColor = MaterialTheme.colorScheme.primary,
+            )
+            ExtendedFloatingActionButton(
+                onClick = onDelete,
+                icon = { Icon(Icons.Filled.ExitToApp, contentDescription = null) },
+                text = { Text("删除") },
+                containerColor = Color(0xFFD32F2F),
+            )
+        }
     }
 }

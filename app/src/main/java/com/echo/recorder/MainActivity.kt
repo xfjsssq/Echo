@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
                 EchoApp(
                     hasPermission = hasPermission,
                     onRequestPermission = { requestMicPermission() },
+                    onExit = { finishAndRemoveTask() },
                 )
             }
         }

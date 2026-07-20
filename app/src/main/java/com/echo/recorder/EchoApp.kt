@@ -8,40 +8,68 @@ import android.os.Build
 import android.os.IBinder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.rememberNavController
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.ui.navigation.EchoNavHost
 import com.echo.recorder.ui.record.RecordViewModel
-import kotlinx.coroutines.launch
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+
 
 /**
  * 应用根组合. 持有 [RecordViewModel], 绑定前台录音服务, 渲染 [EchoNavHost].
+ *
+ * - 仅授权后才启动/绑定时服务 (targetSdk=34 + microphone FGS 未授权会崩溃).
+ * - 启动时做一次 UNPROCESSED 检查 (冷启动恢复弹窗).
+ * - onRestartService: 设置页改缓冲时长后重启服务 (按新 N 重新绑定).
  */
 @Composable
 fun EchoApp(
     hasPermission: Boolean,
     onRequestPermission: () -> Unit = {},
+    onExit: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val viewModel = remember { RecordViewModel() }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    var service by remember { mutableStateOf<RecordingService?>(null) }
+    var askExitPassword by remember { mutableStateOf(false) }
 
-    var recorder by remember { mutableStateOf<RecordingService?>(null) }
+    // 彻底退出密码门控 (功能占位: 密码功能留空, 直接放行).
+    if (askExitPassword) {
+        AlertDialog(
+            onDismissRequest = { askExitPassword = false },
+            title = { Text("输入密码以退出") },
+            text = { Text("密码保护功能占位, 点击确认直接退出") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askExitPassword = false
+                    viewModel.exitCompletely()
+                    onExit()
+                }) { Text("确认") }
+            },
+            dismissButton = {
+                TextButton(onClick = { askExitPassword = false }) { Text("取消") }
+            },
+        )
+    }
 
-    // 同步权限到 ViewModel, 否则按钮禁用态永远不变.
-    androidx.compose.runtime.LaunchedEffect(hasPermission) {
+    LaunchedEffect(hasPermission) {
         viewModel.setHasPermission(hasPermission)
     }
 
-    // 仅授权后才启动/绑定前台服务.
-    // targetSdk=34 + foregroundServiceType="microphone": 未授权就 startForeground 会抛 SecurityException 崩溃.
+    // 冷启动恢复检查 (仅授权后, 绑定前做一次).
+    LaunchedEffect(hasPermission) {
+        if (hasPermission) viewModel.checkUnprocessed()
+    }
+
     DisposableEffect(context, hasPermission) {
         if (!hasPermission) {
             return@DisposableEffect onDispose { }
@@ -49,22 +77,12 @@ fun EchoApp(
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 val b = binder as? RecordingService.RecordingServiceBinder ?: return
-                recorder = b.service
+                service = b.service
                 viewModel.setRecorder(b.service)
-                // 订阅服务状态, 同步到 ViewModel, 否则界面不知道正在录音.
-                observeService(b.service)
-            }
-
-            private fun observeService(service: RecordingService) {
-                scope.launch {
-                    service.state.collect { s ->
-                        viewModel.syncFrom(s.isRecording, s.elapsedMs)
-                    }
-                }
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
-                recorder = null
+                service = null
             }
         }
         val intent = Intent(context, RecordingService::class.java).apply {
@@ -82,9 +100,32 @@ fun EchoApp(
         }
     }
 
+    // 重启服务 (设置页改缓冲时长): 发 RESTART 让服务回到 IDLE 并用新设置.
+    val onRestartService: (Boolean) -> Unit = { savePending ->
+        val intent = Intent(context, RecordingService::class.java).apply {
+            action = RecordingService.ACTION_RESTART
+            putExtra(RecordingService.EXTRA_SAVE_PENDING, savePending)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+        // 刷新 ViewModel 的 phase 到 IDLE (服务 handleRestart 会推 REVIEW->IDLE).
+        service = null
+    }
+
+    // 用户点退出: 若开启密码门控则弹对话框, 否则直接退出.
+    val onRequestExit: () -> Unit = {
+        if (viewModel.state.value.passwordEnabled) askExitPassword = true
+        else { viewModel.exitCompletely(); onExit() }
+    }
+
     EchoNavHost(
         navController = navController,
         recordViewModel = viewModel,
         onRequestPermission = onRequestPermission,
+        onRestartService = onRestartService,
+        onRequestExit = onRequestExit,
     )
 }
