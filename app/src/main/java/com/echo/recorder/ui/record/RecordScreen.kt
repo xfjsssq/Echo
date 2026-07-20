@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
@@ -61,13 +62,13 @@ fun RecordScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    // 冷启动恢复对话框 (阻塞进入).
+    // 冷启动恢复对话框 (阻塞进入). 仅当存在紧急保存文件时弹出.
     state.pendingRecovery?.let { rec ->
         AlertDialog(
             onDismissRequest = { /* 必须选择, 不可外部关闭 */ },
-            title = { Text("你好, 上次退出前的回音小E帮你留下了") },
+            title = { Text("由于您上次离开得太着急, 还好小E帮你暂停了!") },
             text = {
-                Text("时间: ${fmtTime(rec.createdAt)}\n要留着它吗?")
+                Text("这里有一段未处理的录音, 要保留它吗?\n时间: ${fmtTime(rec.createdAt)}")
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.recoverKeep() }) { Text("保留") }
@@ -113,6 +114,7 @@ fun RecordScreen(
                     )
                     RecordingService.Phase.BUFFERING -> BufferingContent(
                         onPause = { viewModel.onPausePressed() },
+                        saving = state.saving,
                     )
                     RecordingService.Phase.REVIEW -> ReviewContent(
                         onSave = { viewModel.onSavePressed() },
@@ -152,23 +154,30 @@ private fun IdleContent(hasPermission: Boolean, onStart: () -> Unit) {
 }
 
 @Composable
-private fun BufferingContent(onPause: () -> Unit) {
+private fun BufferingContent(onPause: () -> Unit, saving: Boolean = false) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FloatingActionButton(
-            onClick = onPause,
-            modifier = Modifier.size(120.dp),
-            shape = CircleShape,
-            containerColor = Color(0xFFD32F2F),
-        ) {
-            Icon(
-                Icons.Filled.Pause,
-                contentDescription = "暂停",
-                tint = Color.White,
-                modifier = Modifier.size(56.dp),
-            )
+        if (saving) {
+            // 后台保存中: 显示加载态, 避免用户重复点击并给出反馈.
+            CircularProgressIndicator(modifier = Modifier.size(80.dp), color = Color(0xFFD32F2F))
+            Spacer(Modifier.height(16.dp))
+            Text("正在保存...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            FloatingActionButton(
+                onClick = onPause,
+                modifier = Modifier.size(120.dp),
+                shape = CircleShape,
+                containerColor = Color(0xFFD32F2F),
+            ) {
+                Icon(
+                    Icons.Filled.Pause,
+                    contentDescription = "暂停",
+                    tint = Color.White,
+                    modifier = Modifier.size(56.dp),
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("即时回放运行中", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(16.dp))
-        Text("即时回放运行中", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

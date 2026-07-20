@@ -1,6 +1,9 @@
 package com.echo.recorder.ui.list
 
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,13 +17,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -41,31 +49,61 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.playback.AudioPlayer
 import com.echo.recorder.playback.DefaultAudioPlayerFactory
 import com.echo.recorder.ui.formatElapsed
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.util.Date
 
-/**
- * 录音列表页 —— 极简主义, 无独立播放页.
- *
- * - 顶部双 Tab (临时/长期).
- * - 按日期分组, 日历图标入口 (占位).
- * - 点击条目 -> 原地展开迷你播放器 (进度条/播放暂停/时间).
- * - 长按条目 -> 多选模式, 底部批量操作栏.
- */
+import java.util.Locale
+
+private const val MIN_PLAYABLE_MS = 1000L
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ListScreen(viewModel: ListViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
-    // 列表页共享一个播放器; 展开哪条就准备哪条.
     val player = remember { DefaultAudioPlayerFactory().create() }
     DisposableEffect(Unit) { onDispose { player.release() } }
     var playingId by remember { mutableStateOf<String?>(null) }
+
+    var showCalendar by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    val items = if (state.tab == ListTab.TEMPORARY) state.temporary else state.longTerm
+    val groups = items.groupBy { dateKey(it.createdAt) }
+    val orderedDays = groups.keys.sorted()
+    // flat list with stable keys for LazyColumn indexing + date scroll.
+    data class Entry(val key: String, val isHeader: Boolean, val day: String, val rec: Recording?)
+    val flat = orderedDays.flatMap { day ->
+        val dayItems = groups.getValue(day)
+        listOf(Entry("h-$day", true, day, null)) + dayItems.map { Entry(it.id, false, day, it) }
+    }
+    var scrollTarget by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(scrollTarget) {
+        val target = scrollTarget ?: return@LaunchedEffect
+        val idx = flat.indexOfFirst { it.isHeader && it.day == target }
+        if (idx >= 0) {
+            listState.animateScrollToItem(idx)
+        } else {
+            Toast.makeText(context, "当天没有录音记录", Toast.LENGTH_SHORT).show()
+        }
+        scrollTarget = null
+    }
+
+    val recordingDays = remember(items) { items.map { startOfDay(it.createdAt) }.toSet() }
 
     Scaffold(
         topBar = {
@@ -73,7 +111,7 @@ fun ListScreen(viewModel: ListViewModel) {
                 TopAppBar(
                     title = { Text("录音列表") },
                     actions = {
-                        IconButton(onClick = { /* 日历: 后期 */ }) {
+                        IconButton(onClick = { showCalendar = true }) {
                             Icon(Icons.Filled.CalendarMonth, contentDescription = "日历")
                         }
                     },
@@ -103,24 +141,22 @@ fun ListScreen(viewModel: ListViewModel) {
             }
         },
     ) { padding ->
-        val items = if (state.tab == ListTab.TEMPORARY) state.temporary else state.longTerm
         if (items.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text("暂无录音", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-                val groups = items.groupBy { dateKey(it.createdAt) }
-                groups.forEach { (day, dayItems) ->
-                    item(key = "h-$day") {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = listState) {
+                items(flat, key = { it.key }) { entry ->
+                    if (entry.isHeader) {
                         Text(
-                            text = day,
+                            text = entry.day,
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                         )
-                    }
-                    items(dayItems, key = { it.id }) { rec ->
+                    } else {
+                        val rec = entry.rec!!
                         RecordingRow(
                             rec = rec,
                             expanded = state.expandedId == rec.id,
@@ -142,6 +178,100 @@ fun ListScreen(viewModel: ListViewModel) {
             }
         }
     }
+
+    if (showCalendar) {
+        CalendarDialog(
+            recordingDays = recordingDays,
+            onDateSelected = { date ->
+                showCalendar = false
+                val dayStr = dayFmt.format(Date(startOfDayFromLocal(date)))
+                scrollTarget = dayStr
+            },
+            onDismiss = { showCalendar = false },
+        )
+    }
+}
+
+@Composable
+private fun CalendarDialog(
+    recordingDays: Set<Long>,
+    onDateSelected: (LocalDate) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var month by remember { mutableStateOf(YearMonth.now()) }
+    val monthLabel: String = remember(month) {
+        "%d年%02d月".format(month.year, month.monthValue)
+    }
+    val leadingBlanks = month.atDay(1).dayOfWeek.value % 7 // 周日=0
+    val daysInMonth = month.lengthOfMonth()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { month = month.minusMonths(1) }) {
+                    Icon(Icons.Filled.ChevronLeft, contentDescription = "上一月")
+                }
+                Text(
+                    monthLabel,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Medium,
+                )
+                IconButton(onClick = { month = month.plusMonths(1) }) {
+                    Icon(Icons.Filled.ChevronRight, contentDescription = "下一月")
+                }
+            }
+        },
+        text = {
+            Column {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    listOf("日", "一", "二", "三", "四", "五", "六").forEach { w ->
+                        Text(
+                            w, modifier = Modifier.weight(1f), textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                val total = leadingBlanks + daysInMonth
+                val rows = (total + 6) / 7
+                for (r in 0 until rows) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        for (c in 0 until 7) {
+                            val idx = r * 7 + c
+                            val day = idx - leadingBlanks + 1
+                            Box(
+                                modifier = Modifier.weight(1f).padding(vertical = 2.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (day in 1..daysInMonth) {
+                                    val date = month.atDay(day)
+                                    val hasRec = recordingDays.contains(startOfDayFromLocal(date))
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.fillMaxWidth().clip(CircleShape).clickable { onDateSelected(date) }.padding(vertical = 4.dp),
+                                    ) {
+                                        Text("$day", style = MaterialTheme.typography.bodyMedium)
+                                        if (hasRec) {
+                                            Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -160,12 +290,10 @@ private fun RecordingRow(
     onRequestPlayThis: () -> Unit,
 ) {
     val painterSelect = if (selected) Icons.Filled.CheckCircle else null
+    val isEmpty = rec.durationMs < MIN_PLAYABLE_MS
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(onClick = onTap, onLongClick = onLongPress)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onTap, onLongClick = onLongPress).padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -181,7 +309,7 @@ private fun RecordingRow(
                 Spacer(Modifier.size(12.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(rec.displayName, style = MaterialTheme.typography.bodyLarge)
+                Text(if (isEmpty) "空片段" else rec.displayName, style = MaterialTheme.typography.bodyLarge)
                 Text(
                     text = "${timeOnly(rec.createdAt)}   ${formatElapsed(rec.durationMs)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -197,16 +325,24 @@ private fun RecordingRow(
             }
         }
 
-        // 原地展开的迷你播放器.
         if (expanded) {
-            MiniPlayer(
-                rec = rec,
-                player = player,
-                isPlayingThis = isPlayingThis,
-                onRequestPlayThis = onRequestPlayThis,
-                onSave = onSave,
-                onDelete = onDelete,
-            )
+            if (isEmpty) {
+                Text(
+                    "空片段, 无法播放",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            } else {
+                MiniPlayer(
+                    rec = rec,
+                    player = player,
+                    isPlayingThis = isPlayingThis,
+                    onRequestPlayThis = onRequestPlayThis,
+                    onSave = onSave,
+                    onDelete = onDelete,
+                )
+            }
         }
     }
     Divider()
@@ -222,7 +358,6 @@ private fun MiniPlayer(
     onDelete: () -> Unit,
 ) {
     val ps by player.stateFlow.collectAsStateWithLifecycle()
-    // 展开时准备本条 (仅当播放器当前没在播这条时).
     LaunchedEffect(rec.id, isPlayingThis) {
         if (!isPlayingThis) {
             player.prepare(rec)
@@ -280,28 +415,15 @@ private fun MiniPlayer(
 }
 
 @Composable
-private fun BatchBottomBar(
-    count: Int,
-    onDelete: () -> Unit,
-    onMoveToLongTerm: () -> Unit,
-    onExit: () -> Unit,
-) {
+private fun BatchBottomBar(count: Int, onDelete: () -> Unit, onMoveToLongTerm: () -> Unit, onExit: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("已选 $count", modifier = Modifier.weight(1f))
-        IconButton(onClick = onMoveToLongTerm) {
-            Icon(Icons.Filled.Archive, contentDescription = "批量移至长期")
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "批量删除")
-        }
-        IconButton(onClick = onExit) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = "退出多选")
-        }
+        IconButton(onClick = onMoveToLongTerm) { Icon(Icons.Filled.Archive, contentDescription = "批量移至长期") }
+        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "批量删除") }
+        IconButton(onClick = onExit) { Icon(Icons.Filled.CheckCircle, contentDescription = "退出多选") }
     }
 }
 
@@ -310,3 +432,10 @@ private val timeFmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ge
 
 private fun dateKey(epochMs: Long): String = dayFmt.format(java.util.Date(epochMs))
 private fun timeOnly(epochMs: Long): String = timeFmt.format(java.util.Date(epochMs))
+
+private fun startOfDay(epochMs: Long): Long = java.util.Calendar.getInstance().apply {
+    timeInMillis = epochMs; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun startOfDayFromLocal(date: LocalDate): Long =
+    date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()

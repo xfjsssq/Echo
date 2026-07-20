@@ -55,12 +55,20 @@ class RecordingService : Service() {
     private var buffer: CircularBuffer? = null
     private var bufferSeconds: Int = DEFAULT_BUFFER_SECONDS
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var rotateJob: Job? = null
     private var lastTextIndex: Int = -1
 
     private val _phase = MutableStateFlow(Phase.IDLE)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
+
+    /** "暂停"后在后台保存时为 true, 让 UI 显示加载态而不阻塞主线程. */
+    private val _saving = MutableStateFlow(false)
+    val saving: StateFlow<Boolean> = _saving.asStateFlow()
+
+    /** 彻底退出标记: 由 [shutdownCleanly] 置位, onDestroy 据此跳过紧急保存. */
+    @Volatile
+    private var cleanShutdown = false
 
     companion object {
         const val DEFAULT_BUFFER_SECONDS = 180
@@ -76,22 +84,25 @@ class RecordingService : Service() {
         const val EXTRA_SAVE_PENDING = "extra_save_pending"
         const val ACTION_KILL = "com.echo.recorder.action.KILL"
         val BUFFERING_TEXTS = listOf(
-            "嘘～小E正在认真聆听...",
-            "小E的耳朵竖起来了，正在捕捉周围的声音。",
-            "别担心，小E帮你记住每一句重要的话。",
-            "正在缓冲中，按下暂停即可保存最近几分钟。",
-            "小E默默守护你的每一次对话。",
-            "所有音频只在本地，小E绝不上传。",
-            "正在记录中，你可以随时取出刚刚说过的话。",
-            "小声说，小E连听见风声都会帮你存下来哦。",
-            "别让重要的话溜走，小E在听。",
-            "录制不受干扰，你可以去做别的事。",
-            "小E是个安静的小助手，只记录，不打扰。",
-            "记得用通知栏按钮快速暂停和保存。",
-            "安心去聊，回放的事交给小E。",
-            "你永远可以信任小E的录音兜底能力。",
-            "小E提醒你：录音需遵守当地法律哦。",
+            "嘘～小E正在认真聆听",
+            "小E的耳朵竖起来了，正在捕捉周围的声音",
+            "别担心，小E帮你记住每一句重要的话",
+            "正在缓冲中，按下暂停即可保存最近几分钟",
+            "小E默默守护你的每一次对话",
+            "所有音频只在本地，小E绝不上传",
+            "正在记录中，你可以随时取出刚刚说过的话",
+            "小声说，小E连听见风声都会帮你存下来哦",
+            "别让重要的话溜走，小E在听",
+            "录制不受干扰，你可以去做别的事",
+            "小E是个安静的小助手，只记录，不打扰",
+            "记得用通知栏按钮快速暂停和保存",
+            "安心去聊，回放的事交给小E",
+            "你永远可以信任小E的录音兜底能力",
+            "小E提醒你：录音需遵守当地法律哦",
         )
+
+        /** 低于此时长(ms)的缓冲视为空片段, 不创建文件. */
+        const val MIN_SAVE_DURATION_MS = 1000L
     }
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -155,12 +166,25 @@ class RecordingService : Service() {
     fun pause() {
         if (_phase.value != Phase.BUFFERING) return
         val cb = buffer ?: return
-        val dest = File(pendingDir(this), "echo_${System.currentTimeMillis()}.m4a")
-        val dur = cb.save(dest)
-        if (dur > 0L) runBlocking { repo().create(dest, dur) }
-        _phase.value = Phase.REVIEW
-        stopRotate()
-        rebuildNotification()
+        if (_saving.value) return
+        _saving.value = true
+        scope.launch {
+            try {
+                val dest = File(pendingDir(this@RecordingService), "echo_${System.currentTimeMillis()}.m4a")
+                val dur = cb.save(dest)
+                // 有效时长不足 1 秒则不创建文件 (避免产生 0 秒空片段).
+                if (dur >= MIN_SAVE_DURATION_MS) {
+                    runBlocking { repo().create(dest, dur) }
+                } else {
+                    runCatching { if (dest.exists()) dest.delete() }
+                }
+                _phase.value = Phase.REVIEW
+                stopRotate()
+                rebuildNotification()
+            } finally {
+                _saving.value = false
+            }
+        }
     }
 
     fun save() {
@@ -281,24 +305,44 @@ class RecordingService : Service() {
             .build()
     }
 
+    /** 彻底退出: 标记为干净退出并停服务, 不产生紧急保存文件. */
+    fun shutdownCleanly() {
+        cleanShutdown = true
+        buffer?.release()
+        buffer = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
+        // 从任务管理器划掉属于非正常退出 -> 紧急保存.
         saveUnprocessed()
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
-        saveUnprocessed()
+        // 彻底退出(cleanShutdown)不保存; 其余异常退出(系统杀死)才紧急保存.
+        if (!cleanShutdown) {
+            saveUnprocessed()
+        }
         stopRotate()
         buffer?.release(); buffer = null
         scope.cancel()
         super.onDestroy()
     }
 
+    /**
+     * 紧急保存当前缓冲为带特殊标记的文件, 供下次启动恢复.
+     * 有效时长不足 1 秒则不创建.
+     */
     private fun saveUnprocessed() {
         val cb = buffer ?: return
-        val dest = File(unprocessedDir(this), "rec_${System.currentTimeMillis()}.m4a")
+        val dest = File(unprocessedDir(this), "recording_emergency_${System.currentTimeMillis()}.m4a")
         val dur: Long = cb.releaseTo(dest)
-        if (dur <= 0L) return
+        if (dur < MIN_SAVE_DURATION_MS) {
+            runCatching { if (dest.exists()) dest.delete() }
+            return
+        }
         runBlocking {
             val created = repo().create(dest, dur)
             runCatching { repo().setCategory(created.id, RecordingCategory.UNPROCESSED) }

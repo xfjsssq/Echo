@@ -27,6 +27,8 @@ data class RecordUiState(
     val pendingRecovery: Recording? = null,
     /** 彻底退出是否被密码门控. */
     val passwordEnabled: Boolean = false,
+    /** 暂停后正在后台保存文件, UI 显示加载态. */
+    val saving: Boolean = false,
 )
 
 /**
@@ -66,6 +68,9 @@ class RecordViewModel(
         service = recorder
         viewModelScope.launch {
             recorder.phase.collect { p -> _state.value = _state.value.copy(phase = p) }
+        }
+        viewModelScope.launch {
+            recorder.saving.collect { s -> _state.value = _state.value.copy(saving = s) }
         }
     }
 
@@ -114,12 +119,9 @@ class RecordViewModel(
         }
     }
 
-    /** 彻底退出: 停止前台服务 + 不保留当前 pending. */
+    /** 彻底退出: 干净退出, 不产生紧急保存文件 (下次启动不弹恢复). */
     fun exitCompletely() {
-        service?.let { s ->
-            s.stopForeground(android.app.Service.STOP_FOREGROUND_REMOVE)
-            s.stopSelf()
-        }
+        service?.shutdownCleanly()
         service = null
     }
 }
