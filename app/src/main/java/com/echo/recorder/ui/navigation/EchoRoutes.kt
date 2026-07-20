@@ -5,6 +5,7 @@ object EchoRoutes {
     const val RECORD = "record"
     const val LIST = "list"
     const val PLAYER = "player"
+    const val SETTINGS = "settings"
     /** 带参数的路由模板. */
     const val PLAYER_WITH_ARG = "player/{recordingId}"
 

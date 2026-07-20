@@ -32,13 +32,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             EchoTheme {
                 EchoApp(
-                    onRequestPermission = {
-                        if (!hasPermission) {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
+                    hasPermission = hasPermission,
+                    onRequestPermission = { requestMicPermission() },
                 )
             }
+        }
+
+        // 首次未授权时主动拉起请求, 否则按钮禁用态无法触发请求.
+        if (!hasPermission) {
+            requestMicPermission()
+        }
+    }
+
+    private fun requestMicPermission() {
+        if (!hasPermission) {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 }

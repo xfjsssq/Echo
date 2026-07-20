@@ -3,6 +3,7 @@ package com.echo.recorder.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -16,6 +17,7 @@ import com.echo.recorder.Recorder
 import com.echo.recorder.ServiceLocator
 import com.echo.recorder.common.recordingsDir
 import com.echo.recorder.domain.model.Recording
+import com.echo.recorder.domain.recording.RecordingRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,6 +39,8 @@ import java.io.File
  */
 class RecordingService : Service(), Recorder {
 
+    enum class Phase { RECORDING, IDLE }
+
     inner class RecordingServiceBinder : Binder() {
         val service: RecordingService get() = this@RecordingService
     }
@@ -45,12 +49,16 @@ class RecordingService : Service(), Recorder {
     private var recorder: MediaRecorder? = null
     private var outputFile: File? = null
     private var startElapsedMs: Long = 0L
+    private var lastSaved: Recording? = null
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var tickJob: Job? = null
 
     private val _state = MutableStateFlow(RecorderState())
     val state: StateFlow<RecorderState> = _state.asStateFlow()
+
+    private val _phase = MutableStateFlow(Phase.IDLE)
+    val phase: StateFlow<Phase> = _phase.asStateFlow()
 
     data class RecorderState(
         val isRecording: Boolean = false,
@@ -67,9 +75,14 @@ class RecordingService : Service(), Recorder {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> {
+            ACTION_PAUSE -> {
+                stopRecording()
+                enterIdle()
+            }
+            ACTION_SAVE -> startRecording()
+            ACTION_DELETE -> {
+                deleteLast()
                 startRecording()
-                startForeground(NOTIFICATION_ID, buildNotification())
             }
             ACTION_STOP -> {
                 stopRecording()
@@ -78,6 +91,11 @@ class RecordingService : Service(), Recorder {
             }
         }
         return START_STICKY
+    }
+
+    private fun enterIdle() {
+        _phase.value = Phase.IDLE
+        startForeground(NOTIFICATION_ID, buildNotification())
     }
 
     override fun startRecording() {
@@ -104,8 +122,10 @@ class RecordingService : Service(), Recorder {
         }
 
         startElapsedMs = System.currentTimeMillis()
+        _phase.value = Phase.RECORDING
         _state.value = RecorderState(isRecording = true, elapsedMs = 0L)
         startTicking()
+        startForeground(NOTIFICATION_ID, buildNotification())
     }
 
     override fun stopRecording(): Recording? {
@@ -123,9 +143,9 @@ class RecordingService : Service(), Recorder {
         _state.value = RecorderState(isRecording = false, elapsedMs = 0L)
 
         val repo = ServiceLocator.repository(this)
-        return runOnMain {
-            repo.create(out, durationMs)
-        }
+        val rec = runOnMain { repo.create(out, durationMs) }
+        lastSaved = rec
+        return rec
     }
 
     private fun startTicking() {
@@ -167,12 +187,44 @@ class RecordingService : Service(), Recorder {
         }
     }
 
+    private fun deleteLast() {
+        val rec = lastSaved ?: return
+        lastSaved = null
+        val id = rec.id
+        val url = rec.fileUrl
+        runBlocking { ServiceLocator.repository(this@RecordingService).delete(id) }
+        runCatching {
+            val f = File(url.removePrefix("file://"))
+            if (f.exists()) f.delete()
+        }
+    }
+
+    private fun pendingIntent(action: String, flags: Int): PendingIntent {
+        val intent = Intent(this, RecordingService::class.java).apply { this.action = action }
+        val req = action.hashCode()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PendingIntent.getForegroundService(this, req, intent, flags)
+        } else {
+            PendingIntent.getService(this, req, intent, flags)
+        }
+    }
+
     private fun buildNotification(): Notification {
+        val pendingFlag = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("正在录音…")
             .setOngoing(true)
             .setSilent(true)
+            .setContentTitle("小E正在监听整个世界...")
+            .apply {
+                when (_phase.value) {
+                    Phase.RECORDING -> addAction(0, "暂停", pendingIntent(ACTION_PAUSE, pendingFlag))
+                    Phase.IDLE -> {
+                        addAction(0, "保存", pendingIntent(ACTION_SAVE, pendingFlag))
+                        addAction(0, "删除", pendingIntent(ACTION_DELETE, pendingFlag))
+                    }
+                }
+            }
             .build()
     }
 
@@ -188,5 +240,8 @@ class RecordingService : Service(), Recorder {
         const val NOTIFICATION_ID = 1001
         const val ACTION_START = "com.echo.recorder.action.START"
         const val ACTION_STOP = "com.echo.recorder.action.STOP"
+        const val ACTION_PAUSE = "com.echo.recorder.action.PAUSE"
+        const val ACTION_SAVE = "com.echo.recorder.action.SAVE"
+        const val ACTION_DELETE = "com.echo.recorder.action.DELETE"
     }
 }
