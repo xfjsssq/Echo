@@ -65,8 +65,8 @@ fun SettingsScreen(
     if (showRestart) {
         AlertDialog(
             onDismissRequest = { showRestart = false },
-            title = { Text("修改回音时长需要重启小E哦") },
-            text = { Text("新的缓冲时长将在重启后生效") },
+            title = { Text("修改回音时长需要完全重启小E，是否继续？") },
+            text = { Text("重启后新的缓冲时长才会生效") },
             confirmButton = {
                 TextButton(onClick = {
                     showRestart = false
