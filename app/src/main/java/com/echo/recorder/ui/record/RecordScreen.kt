@@ -29,6 +29,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -109,7 +112,6 @@ fun RecordScreen(
                         },
                     )
                     RecordingService.Phase.BUFFERING -> BufferingContent(
-                        elapsedMs = state.elapsedMs,
                         onPause = { viewModel.onPausePressed() },
                     )
                     RecordingService.Phase.REVIEW -> ReviewContent(
@@ -119,17 +121,11 @@ fun RecordScreen(
                 }
             }
 
-            // 右下角不起眼的退出图标.
-            IconButton(
-                onClick = onExit,
+            // 右下角退出按钮 (带文字说明 + 二次确认).
+            ExitButton(
+                onExit = onExit,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            ) {
-                Icon(
-                    Icons.Filled.ExitToApp,
-                    contentDescription = "彻底退出",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            )
         }
     }
 }
@@ -156,14 +152,8 @@ private fun IdleContent(hasPermission: Boolean, onStart: () -> Unit) {
 }
 
 @Composable
-private fun BufferingContent(elapsedMs: Long, onPause: () -> Unit) {
+private fun BufferingContent(onPause: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = formatElapsed(elapsedMs),
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(bottom = 32.dp),
-        )
         FloatingActionButton(
             onClick = onPause,
             modifier = Modifier.size(120.dp),
@@ -204,5 +194,49 @@ private fun ReviewContent(onSave: () -> Unit, onDelete: () -> Unit) {
                 containerColor = Color(0xFFD32F2F),
             )
         }
+    }
+}
+
+@Composable
+private fun ExitButton(onExit: () -> Unit, modifier: Modifier = Modifier) {
+    var askConfirm by remember { mutableStateOf(false) }
+    var askPassword by remember { mutableStateOf(false) }
+
+    TextButton(onClick = { askConfirm = true }, modifier = modifier) {
+        Icon(
+            Icons.Filled.ExitToApp,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.size(6.dp))
+        Text(
+            "退出并停止录音",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+        )
+    }
+
+    if (askConfirm) {
+        AlertDialog(
+            onDismissRequest = { askConfirm = false },
+            title = { Text("确定要彻底退出小E吗?") },
+            text = { Text("当前未保存的录音将被丢弃。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askConfirm = false
+                    askPassword = true
+                }) { Text("确认退出") }
+            },
+            dismissButton = {
+                TextButton(onClick = { askConfirm = false }) { Text("取消") }
+            },
+        )
+    }
+
+    // 密码门控占位 (密码功能后期填充, 当前直接放行执行退出).
+    if (askPassword) {
+        onExit()
+        askPassword = false
     }
 }

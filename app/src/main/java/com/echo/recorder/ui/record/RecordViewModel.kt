@@ -21,7 +21,6 @@ import kotlinx.coroutines.launch
 /** 录音页 UI 状态. */
 data class RecordUiState(
     val phase: RecordingService.Phase = RecordingService.Phase.IDLE,
-    val elapsedMs: Long = 0L,
     val bufferSeconds: Int = 180,
     val hasPermission: Boolean = false,
     /** 冷启动恢复: 非 null 表示有未处理录音等待用户决定进入. */
@@ -33,7 +32,7 @@ data class RecordUiState(
 /**
  * 录音页 ViewModel.
  *
- * - 通过 [setRecorder] 注入真实服务后, 订阅其 phase / elapsedMs 镜像到 UI.
+ * - 通过 [setRecorder] 注入真实服务后, 订阅其 phase 镜像到 UI.
  * - 启动时检查 UNPROCESSED 录音, 若有则置 [RecordUiState.pendingRecovery] 阻塞进入.
  * - 驱动 IDLE -> BUFFERING -> REVIEW -> BUFFERING 流程.
  */
@@ -67,9 +66,6 @@ class RecordViewModel(
         service = recorder
         viewModelScope.launch {
             recorder.phase.collect { p -> _state.value = _state.value.copy(phase = p) }
-        }
-        viewModelScope.launch {
-            recorder.elapsedMs.collect { ms -> _state.value = _state.value.copy(elapsedMs = ms) }
         }
     }
 
