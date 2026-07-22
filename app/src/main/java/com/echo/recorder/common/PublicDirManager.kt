@@ -23,7 +23,7 @@ object PublicDirManager {
     const val DIR_NAME = "EchoBackup"
 
     /** 公共目录 File (API 26-28 直接可用; 29+ 仅作扫描回退). */
-    private fun publicDir(): File {
+    fun publicDir(): File {
         val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DIR_NAME)
         if (!dir.exists()) dir.mkdirs()
         return dir
