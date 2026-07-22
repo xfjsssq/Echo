@@ -16,9 +16,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // 发布签名配置模板 (E1c): 填入你的 release keystore 信息以启用正式签名.
+    // 生成密钥示例: keytool -genkey -v -keystore echo-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias echo
+    signingConfigs {
+        create("release") {
+            storeFile = file(findProperty("ECHO_STORE_FILE") ?: "echo-release.jks")
+            storePassword = findProperty("ECHO_STORE_PASSWORD") as String?
+            keyAlias = findProperty("ECHO_KEY_ALIAS") as String?
+            keyPassword = findProperty("ECHO_KEY_PASSWORD") as String?
+        }
+    }
+
     buildTypes {
+        debug {
+            // debug 使用默认调试签名.
+        }
         release {
             isMinifyEnabled = false
+            // 启用正式签名: 取消下行注释并在 gradle.properties 提供 ECHO_* 属性.
+            // signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
