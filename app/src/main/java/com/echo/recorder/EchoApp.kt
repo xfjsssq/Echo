@@ -12,20 +12,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.rememberNavController
 import com.echo.recorder.auth.SessionAuth
+import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.ui.lock.LockScreen
 import com.echo.recorder.ui.lock.PasswordPromptDialog
 import com.echo.recorder.ui.navigation.EchoNavHost
+import com.echo.recorder.ui.onboarding.LanguagePickerScreen
+import com.echo.recorder.ui.onboarding.OnboardingScreen
+import com.echo.recorder.ui.onboarding.PrivacyAgreementScreen
 import com.echo.recorder.ui.record.RecordViewModel
+import kotlinx.coroutines.launch
 
 /**
  * 应用根组合. 持有 [RecordViewModel], 绑定前台录音服务, 渲染 [EchoNavHost].
@@ -44,12 +51,32 @@ fun EchoApp(
     val navController = rememberNavController()
     val viewModel = remember { RecordViewModel() }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var service by remember { mutableStateOf<RecordingService?>(null) }
     var askExitPassword by remember { mutableStateOf(false) }
 
     val settings = remember { SettingsRepository(context) }
     val passwordEnabled by produceState(initialValue = false) {
         settings.passwordEnabled.collect { value = it }
+    }
+
+    // 首次启动引导: 隐私协议 -> 语言选择 -> 引导卡片 -> 进入主界面 (F1).
+    val onboardingDone by produceState(initialValue = true) {
+        settings.onboardingDone.collect { value = it }
+    }
+    if (!onboardingDone) {
+        var step by remember { mutableIntStateOf(0) }
+        when (step) {
+            0 -> PrivacyAgreementScreen(onAgree = { step = 1 })
+            1 -> LanguagePickerScreen(onPick = { code ->
+                scope.launch { settings.setLanguage(code) }
+                step = 2
+            })
+            2 -> OnboardingScreen(onFinish = {
+                scope.launch { settings.setOnboardingDone(true) }
+            })
+        }
+        return
     }
 
     // 冷启动锁屏: 开启密码且本会话未解锁时, 全屏覆盖锁屏层.
