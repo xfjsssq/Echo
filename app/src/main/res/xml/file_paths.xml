@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 应用私有录音目录 (分享用). -->
+    <files-path name="recordings" path="recordings/" />
+    <files-path name="root" path="." />
+    <!-- 公共目录 EchoBackup (分享虚引用文件用). -->
+    <external-path name="echo_backup" path="Download/EchoBackup/" />
+    <external-path name="external_root" path="." />
+    <!-- 缓存目录 (FileProvider 需要时). -->
+    <cache-path name="cache" path="." />
+</paths>

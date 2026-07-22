@@ -6,14 +6,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.echo.recorder.ui.about.AboutScreen
 import com.echo.recorder.ui.list.ListScreen
 import com.echo.recorder.ui.list.ListViewModel
+import com.echo.recorder.ui.list.PublicDirManagementScreen
+import com.echo.recorder.ui.lock.PasswordSetupScreen
 import com.echo.recorder.ui.settings.SettingsScreen
 import com.echo.recorder.ui.record.RecordScreen
 import com.echo.recorder.ui.record.RecordViewModel
 
 /**
- * 应用导航骨架. 三个路由: record(首页) / list / settings.
+ * 应用导航骨架. 路由: record(首页) / list / settings / password_setup / public_dir / about.
  * 播放不再有独立页, 在列表中原地完成.
  */
 @Composable
@@ -41,10 +44,30 @@ fun EchoNavHost(
             )
         }
         composable(EchoRoutes.LIST) {
-            ListScreen(viewModel = listViewModel)
+            ListScreen(
+                viewModel = listViewModel,
+                onOpenPublicDir = { navController.navigate(EchoRoutes.PUBLIC_DIR) },
+            )
         }
         composable(EchoRoutes.SETTINGS) {
-            SettingsScreen(onRestartService = onRestartService)
+            SettingsScreen(
+                onRestartService = onRestartService,
+                onOpenPasswordSetup = { navController.navigate(EchoRoutes.PASSWORD_SETUP) },
+                onOpenAbout = { navController.navigate(EchoRoutes.ABOUT) },
+                onOpenPublicDir = { navController.navigate(EchoRoutes.PUBLIC_DIR) },
+            )
+        }
+        composable(EchoRoutes.PASSWORD_SETUP) {
+            PasswordSetupScreen(
+                onDone = { navController.popBackStack() },
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(EchoRoutes.PUBLIC_DIR) {
+            PublicDirManagementScreen(onBack = { navController.popBackStack() })
+        }
+        composable(EchoRoutes.ABOUT) {
+            AboutScreen(onBack = { navController.popBackStack() })
         }
     }
 }

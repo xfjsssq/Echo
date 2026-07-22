@@ -4,19 +4,28 @@ import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.domain.recording.RecordingRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.io.File
 
-/** 默认 Repository: 订阅数据源 Flow, 排序后对外. */
+/**
+ * 默认 Repository: 订阅数据源 Flow, 合并公共目录虚引用, 排序后对外.
+ *
+ * 虚引用 (isPublicVirtual) 文件位于公共目录, 不在数据源扫描范围内, 由 [VirtualRefStore] 持久化.
+ */
 class RecordingRepositoryImpl(
     private val ds: RecordingDataSource,
+    private val virtualRefs: VirtualRefStore,
 ) : RecordingRepository {
 
     override fun getAll(): Flow<List<Recording>> =
-        ds.state.map { list -> list.sortedByDescending { it.createdAt } }
+        combine(ds.state, virtualRefs.refs) { scanned, virtual ->
+            (scanned + virtual).sortedByDescending { it.createdAt }
+        }
 
     override suspend fun getById(id: String): Recording =
-        ds.getById(id) ?: throw NoSuchElementException("Recording not found: $id")
+        ds.getById(id)
+            ?: throw NoSuchElementException("Recording not found: $id")
 
     override suspend fun create(file: File, durationMs: Long): Recording =
         ds.upsert(file, durationMs, System.currentTimeMillis())
@@ -25,4 +34,13 @@ class RecordingRepositoryImpl(
 
     override suspend fun setCategory(id: String, category: RecordingCategory): Recording? =
         ds.setCategory(id, category)
+
+    /** 所有虚引用. */
+    fun virtualRefsFlow(): Flow<List<Recording>> = virtualRefs.refs
+
+    /** 添加一条公共目录虚引用. */
+    suspend fun addVirtualRef(rec: Recording) = virtualRefs.add(rec)
+
+    /** 移除一条公共目录虚引用. */
+    suspend fun removeVirtualRef(id: String) = virtualRefs.remove(id)
 }

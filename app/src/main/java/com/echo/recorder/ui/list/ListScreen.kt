@@ -1,5 +1,6 @@
 package com.echo.recorder.ui.list
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -28,6 +29,9 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,21 +49,31 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.echo.recorder.R
+import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.playback.AudioPlayer
 import com.echo.recorder.playback.DefaultAudioPlayerFactory
+import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.share.ShareHelper
 import com.echo.recorder.ui.formatElapsed
+import com.echo.recorder.ui.lock.PasswordPromptDialog
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -71,7 +85,7 @@ private const val MIN_PLAYABLE_MS = 1000L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun ListScreen(viewModel: ListViewModel) {
+fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -80,7 +94,9 @@ fun ListScreen(viewModel: ListViewModel) {
     var playingId by remember { mutableStateOf<String?>(null) }
 
     var showCalendar by remember { mutableStateOf(false) }
+    var pendingSaveToPublic by remember { mutableStateOf<Recording?>(null) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     val items = if (state.tab == ListTab.TEMPORARY) state.temporary else state.longTerm
     val groups = items.groupBy { dateKey(it.createdAt) }
@@ -109,10 +125,22 @@ fun ListScreen(viewModel: ListViewModel) {
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("录音列表") },
+                    title = { Text(stringResource(R.string.record_list)) },
                     actions = {
+                        IconButton(onClick = {
+                            scope.launch {
+                                val added = viewModel.syncPublic(context)
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.sync_public_dir_done, added),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }) {
+                            Icon(Icons.Filled.Sync, contentDescription = stringResource(R.string.sync_public_dir))
+                        }
                         IconButton(onClick = { showCalendar = true }) {
-                            Icon(Icons.Filled.CalendarMonth, contentDescription = "日历")
+                            Icon(Icons.Filled.CalendarMonth, contentDescription = stringResource(R.string.calendar))
                         }
                     },
                 )
@@ -172,6 +200,8 @@ fun ListScreen(viewModel: ListViewModel) {
                             onSave = { viewModel.moveToLongTerm(rec.id) },
                             onDelete = { viewModel.delete(rec.id) },
                             onRequestPlayThis = { playingId = rec.id },
+                            onShare = { shareRecording(context, rec) },
+                            onSaveToPublic = { pendingSaveToPublic = rec },
                         )
                     }
                 }
@@ -190,6 +220,70 @@ fun ListScreen(viewModel: ListViewModel) {
             onDismiss = { showCalendar = false },
         )
     }
+
+    // 保存到公共目录处理 (含密码门禁).
+    pendingSaveToPublic?.let { rec ->
+        SaveToPublicHandler(
+            rec = rec,
+            context = context,
+            viewModel = viewModel,
+            onDone = { pendingSaveToPublic = null },
+        )
+    }
+}
+
+/** 保存到公共目录: 首次离开应用后需密码, 本会话内免密. */
+@Composable
+private fun SaveToPublicHandler(
+    rec: Recording,
+    context: Context,
+    viewModel: ListViewModel,
+    onDone: () -> Unit,
+) {
+    val settings = remember { SettingsRepository(context) }
+    val passwordEnabled by produceState(initialValue = false) {
+        value = settings.passwordEnabled.first()
+    }
+    val storedHash by produceState<String?>(initialValue = null) {
+        value = settings.passwordHash.first()
+    }
+    val isPattern by produceState(initialValue = false) {
+        value = settings.passwordType.first() == "pattern"
+    }
+    var verified by remember { mutableStateOf(SessionAuth.savePublicUnlocked) }
+
+    if (verified) {
+        LaunchedEffect(rec.id) {
+            val ok = viewModel.saveToPublic(context, rec)
+            SessionAuth.savePublicUnlocked = true
+            Toast.makeText(
+                context,
+                context.getString(if (ok) R.string.save_to_public_done else R.string.delete),
+                Toast.LENGTH_SHORT,
+            ).show()
+            onDone()
+        }
+        return
+    }
+
+    // 未验证: 若开启密码则弹验证框, 否则直接执行.
+    if (passwordEnabled) {
+        PasswordPromptDialog(
+            storedHash = storedHash,
+            recoveryHash = null,
+            isPattern = isPattern,
+            onVerify = { verified = true },
+            onDismiss = { onDone() },
+        )
+    } else {
+        LaunchedEffect(rec.id) { verified = true }
+    }
+}
+
+private fun shareRecording(context: Context, rec: Recording) {
+    val file = runCatching { java.io.File(java.net.URI(rec.fileUrl)) }.getOrNull() ?: return
+    if (!file.exists()) return
+    ShareHelper.shareAudio(context, file, "${context.packageName}.fileprovider")
 }
 
 @Composable
@@ -288,6 +382,8 @@ private fun RecordingRow(
     onSave: () -> Unit,
     onDelete: () -> Unit,
     onRequestPlayThis: () -> Unit,
+    onShare: () -> Unit = {},
+    onSaveToPublic: () -> Unit = {},
 ) {
     val painterSelect = if (selected) Icons.Filled.CheckCircle else null
     val isEmpty = rec.durationMs < MIN_PLAYABLE_MS
@@ -341,6 +437,8 @@ private fun RecordingRow(
                     onRequestPlayThis = onRequestPlayThis,
                     onSave = onSave,
                     onDelete = onDelete,
+                    onShare = onShare,
+                    onSaveToPublic = onSaveToPublic,
                 )
             }
         }
@@ -356,6 +454,8 @@ private fun MiniPlayer(
     onRequestPlayThis: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
+    onShare: () -> Unit = {},
+    onSaveToPublic: () -> Unit = {},
 ) {
     val ps by player.stateFlow.collectAsStateWithLifecycle()
     LaunchedEffect(rec.id, isPlayingThis) {
@@ -405,10 +505,19 @@ private fun MiniPlayer(
             )
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onSave) {
-                Icon(Icons.Filled.Archive, contentDescription = "移至长期")
+                Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.move_to_longterm))
+            }
+            IconButton(onClick = onShare) {
+                Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.share))
+            }
+            // 虚引用 (公共目录) 文件不可再保存到公共目录.
+            if (!rec.isPublicVirtual) {
+                IconButton(onClick = onSaveToPublic) {
+                    Icon(Icons.Filled.Save, contentDescription = stringResource(R.string.save_to_public))
+                }
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "删除")
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
             }
         }
     }

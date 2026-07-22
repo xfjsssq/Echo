@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.echo.recorder.ServiceLocator
+import com.echo.recorder.common.PublicDirManager
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.domain.recording.RecordingRepository
@@ -37,7 +38,7 @@ data class ListUiState(
  * - 单条: 移至长期 / 删除.
  */
 class ListViewModel(
-    context: Context,
+    private val context: Context,
     private val repository: RecordingRepository = ServiceLocator.repository(context),
 ) : ViewModel() {
 
@@ -68,6 +69,52 @@ class ListViewModel(
     // ---- 单条操作 ----
     fun moveToLongTerm(id: String) = act(id, RecordingCategory.LONG_TERM)
     fun delete(id: String) = viewModelScope.launch { repository.delete(id) }
+
+    /**
+     * 保存到公共目录: 复制到 Downloads/EchoBackup, 删除私有原文件, 登记虚引用.
+     * @return 成功时返回 Unit, 失败返回 null.
+     */
+    suspend fun saveToPublic(context: Context, rec: Recording): Boolean {
+        val src = runCatching { java.io.File(java.net.URI(rec.fileUrl)) }.getOrNull() ?: return false
+        if (!src.exists()) return false
+        val dest = PublicDirManager.copyToPublic(context, rec, src) ?: return false
+        // 删除私有原文件并从数据源移除.
+        repository.delete(rec.id)
+        // 登记虚引用 (指向公共路径).
+        val publicRec = rec.copy(
+            fileUrl = dest.toURI().toString(),
+            category = RecordingCategory.LONG_TERM,
+            isPublicVirtual = true,
+        )
+        (repository as? com.echo.recorder.data.RecordingRepositoryImpl)?.addVirtualRef(publicRec)
+        return true
+    }
+
+    /** 扫描公共目录并同步虚引用到列表. @return 新增数量. */
+    suspend fun syncPublic(context: Context): Int {
+        val infos = PublicDirManager.scanPublic(context)
+        var added = 0
+        infos.forEach { info ->
+            if (!vfs.exists(info.fileName)) {
+                val now = System.currentTimeMillis()
+                (repository as? com.echo.recorder.data.RecordingRepositoryImpl)?.addVirtualRef(
+                    Recording(
+                        id = info.fileName,
+                        displayName = info.displayName,
+                        fileUrl = java.io.File(PublicDirManager.publicDir(), info.fileName).toURI().toString(),
+                        createdAt = now,
+                        durationMs = 0L,
+                        category = RecordingCategory.LONG_TERM,
+                        isPublicVirtual = true,
+                    ),
+                )
+                added++
+            }
+        }
+        return added
+    }
+
+    private val vfs get() = ServiceLocator.virtualRefStore(context)
 
     // ---- 多选 ----
     fun enterSelection(id: String) {
