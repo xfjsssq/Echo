@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用图标自适应背景色 (与图标原图底色一致). -->
+    <color name="ic_launcher_background">#FAFAFA</color>
+</resources>
