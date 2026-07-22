@@ -3,6 +3,7 @@ package com.echo.recorder
 import android.content.Context
 import com.echo.recorder.data.FilesystemRecordingDataSource
 import com.echo.recorder.data.RecordingRepositoryImpl
+import com.echo.recorder.data.VirtualRefStore
 import com.echo.recorder.domain.recording.RecordingRepository
 
 /**
@@ -18,9 +19,17 @@ object ServiceLocator {
             repository ?: buildRepository(context).also { repository = it }
         }
 
+    @Volatile
+    private var virtualRefStore: VirtualRefStore? = null
+
+    fun virtualRefStore(context: Context): VirtualRefStore =
+        virtualRefStore ?: synchronized(this) {
+            virtualRefStore ?: VirtualRefStore(context.applicationContext).also { virtualRefStore = it }
+        }
+
     private fun buildRepository(context: Context): RecordingRepository {
         val ds = FilesystemRecordingDataSource(context.applicationContext)
         ds.load()
-        return RecordingRepositoryImpl(ds)
+        return RecordingRepositoryImpl(ds, virtualRefStore(context))
     }
 }
