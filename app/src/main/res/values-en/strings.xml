@@ -1,0 +1,153 @@
+<resources>
+    <string name="app_name">Echo</string>
+
+    <!-- Common -->
+    <string name="confirm">Confirm</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="delete">Delete</string>
+    <string name="save">Save</string>
+    <string name="back">Back</string>
+    <string name="skip">Skip</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="coming_soon">Coming soon</string>
+    <string name="share">Share</string>
+
+    <!-- Record screen -->
+    <string name="start">Start</string>
+    <string name="pause">Pause</string>
+    <string name="record_list">Recordings</string>
+    <string name="settings">Settings</string>
+    <string name="mic_permission_needed">Microphone permission is required to record</string>
+    <string name="exit_stop_recording">Exit &amp; stop recording</string>
+    <string name="exit_confirm_title">Are you sure you want to exit?</string>
+    <string name="exit_confirm_text">Unsaved recordings will be discarded.</string>
+    <string name="exit_confirm_button">Exit</string>
+    <string name="buffering_running">Instant replay running</string>
+    <string name="saving">Saving...</string>
+    <string name="review_title">Paused — decide what to do with this clip</string>
+    <string name="empty_fragment">Empty clip</string>
+    <string name="empty_fragment_cant_play">Empty clip, cannot play</string>
+    <string name="play_pause">Play / Pause</string>
+    <string name="move_to_longterm">Move to long-term</string>
+
+    <!-- Recovery dialog -->
+    <string name="recovery_title">You left in a hurry last time — luckily Echo paused for you!</string>
+    <string name="recovery_text">There is an unsaved recording. Keep it?\nTime: %1$s</string>
+    <string name="keep">Keep</string>
+
+    <!-- List screen -->
+    <string name="temporary_recordings">Temporary</string>
+    <string name="longterm_recordings">Long-term</string>
+    <string name="no_recordings">No recordings</string>
+    <string name="no_recording_that_day">No recordings on that day</string>
+    <string name="calendar">Calendar</string>
+    <string name="long_term">Long-term</string>
+    <string name="temporary">Temporary</string>
+    <string name="sync_public_dir">Sync public directory</string>
+    <string name="public_dir_management">Public directory files</string>
+    <string name="save_to_public">Save to public directory</string>
+
+    <!-- Selection -->
+    <string name="selected_count">%1$d selected</string>
+    <string name="batch_move_to_longterm">Batch move to long-term</string>
+    <string name="batch_delete">Batch delete</string>
+    <string name="exit_selection">Exit selection</string>
+
+    <!-- Settings -->
+    <string name="settings_buffer_title">Instant replay buffer</string>
+    <string name="settings_password_title">Password protection</string>
+    <string name="settings_password_subtitle">When enabled, cold launch and deletion require your password</string>
+    <string name="settings_password_placeholder">(placeholder)</string>
+    <string name="restart_title">Changing the buffer requires a full restart of Echo. Continue?</string>
+    <string name="restart_text">The new buffer length takes effect after restart</string>
+    <string name="restart_button">Restart</string>
+    <string name="save_pending_title">Save the currently buffered audio?</string>
+    <string name="save_pending_text">Saving writes the current buffer to the list, then restarts Echo</string>
+    <string name="dont_save">Don\'t save</string>
+
+    <!-- Settings groups -->
+    <string name="group_recording">Recording</string>
+    <string name="group_security">Security</string>
+    <string name="group_storage">Storage</string>
+    <string name="group_appearance">Appearance &amp; language</string>
+    <string name="group_help">Help &amp; about</string>
+    <string name="buffer_duration">Buffer duration</string>
+    <string name="privacy_mode">Privacy mode</string>
+    <string name="password_protection">Password protection</string>
+    <string name="change_password">Change password</string>
+    <string name="view_recovery_key">View recovery key</string>
+    <string name="public_dir_backup">Public directory backup</string>
+    <string name="public_dir_files">Public directory files</string>
+    <string name="theme">Theme</string>
+    <string name="language">Language</string>
+    <string name="how_to_use">How to use Echo</string>
+    <string name="privacy_policy">Privacy policy</string>
+    <string name="about">About</string>
+
+    <!-- Theme -->
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_system">Follow system</string>
+
+    <!-- Language -->
+    <string name="language_selection_title">Please select language</string>
+    <string name="language_zh">中文</string>
+    <string name="language_en">English</string>
+
+    <!-- Password -->
+    <string name="password_settings">Password settings</string>
+    <string name="password_type_title">Choose password type</string>
+    <string name="password_type_pin">6-digit PIN</string>
+    <string name="password_type_pattern">Pattern lock</string>
+    <string name="pin_input_hint">Enter a 6-digit PIN</string>
+    <string name="pin_confirm_hint">Enter the PIN again</string>
+    <string name="pattern_input_hint">Draw your pattern</string>
+    <string name="pattern_confirm_hint">Draw the pattern again</string>
+    <string name="pin_mismatch">The two PINs do not match</string>
+    <string name="pattern_mismatch">The two patterns do not match</string>
+    <string name="pattern_too_short">Connect at least 4 dots</string>
+    <string name="recovery_key_title">Recovery key</string>
+    <string name="recovery_key_warning">Note: this is the recovery key, not the password again. Use it to reset your password if forgotten. Keep it safe — Echo cannot recover it.</string>
+    <string name="recovery_key_label">Your recovery key: %1$s</string>
+    <string name="set_password">Set password</string>
+    <string name="input_password">Enter password</string>
+    <string name="password_wrong">Wrong password</string>
+    <string name="recovery_key_wrong">Wrong recovery key</string>
+    <string name="forgot_password">Forgot password?</string>
+    <string name="reset_password_with_recovery">Reset with recovery key</string>
+    <string name="lock_screen_subtitle">Enter your password to open Echo</string>
+
+    <!-- Public directory -->
+    <string name="public_dir_enable_title">Enable public directory backup?</string>
+    <string name="public_dir_enable_text">When enabled, recordings can be saved to Downloads/EchoBackup so they survive app uninstall.</string>
+    <string name="public_dir_management_title">Public directory files</string>
+    <string name="public_dir_management_note">Files here can only be deleted, not played</string>
+    <string name="double_verify_needed">Deleting a public file requires double verification</string>
+    <string name="double_verify_step2">Enter the recovery key again</string>
+    <string name="sync_public_dir_done">Sync complete, %1$d new file(s) added</string>
+    <string name="save_to_public_done">Saved to public directory</string>
+
+    <!-- About -->
+    <string name="version">Version</string>
+    <string name="signature">SHA-256 fingerprint</string>
+    <string name="signature_note">Verify this fingerprint on the GitHub Release page to ensure the package has not been tampered with.</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_finish">Get started</string>
+    <string name="onboarding1_title">Welcome to Echo</string>
+    <string name="onboarding1_text">Echo is a fully offline instant-replay recorder that helps you remember what was just said.</string>
+    <string name="onboarding2_title">Instant replay</string>
+    <string name="onboarding2_text">Echo always buffers the last few minutes — tap pause to save them.</string>
+    <string name="onboarding3_title">Calendar &amp; categories</string>
+    <string name="onboarding3_text">Find recordings quickly with the calendar, and move clips to long-term with one tap.</string>
+    <string name="onboarding4_title">Security</string>
+    <string name="onboarding4_text">Protect your recordings with a PIN or pattern lock.</string>
+
+    <!-- Privacy -->
+    <string name="privacy_title">Privacy policy</string>
+    <string name="privacy_text">Echo is a fully offline recording app.\n\n1. All recordings are stored only on your device and are never uploaded.\n2. The app requests no network permission and cannot transmit data.\n3. You have full control and can delete recordings at any time.\n\nBy continuing, you agree to these terms.</string>
+    <string name="agree">Agree &amp; continue</string>
+</resources>

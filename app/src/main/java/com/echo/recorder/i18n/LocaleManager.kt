@@ -1,5 +1,6 @@
 package com.echo.recorder.i18n
 
+import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import java.util.Locale
@@ -32,5 +33,10 @@ object LocaleManager {
     fun current(language: String?): String = when (language) {
         EN -> EN
         else -> ZH
+    }
+
+    /** 切换语言后重建 Activity 以生效. */
+    fun recreate(activity: Activity) {
+        activity.recreate()
     }
 }

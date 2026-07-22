@@ -1,3 +1,153 @@
 <resources>
     <string name="app_name">Echo</string>
+
+    <!-- 通用 -->
+    <string name="confirm">确认</string>
+    <string name="cancel">取消</string>
+    <string name="close">关闭</string>
+    <string name="delete">删除</string>
+    <string name="save">保存</string>
+    <string name="back">返回</string>
+    <string name="skip">跳过</string>
+    <string name="next">下一步</string>
+    <string name="previous">上一步</string>
+    <string name="coming_soon">即将推出</string>
+    <string name="share">分享</string>
+
+    <!-- 录音页 -->
+    <string name="start">开始</string>
+    <string name="pause">暂停</string>
+    <string name="record_list">录音列表</string>
+    <string name="settings">设置</string>
+    <string name="mic_permission_needed">需要麦克风权限才能录音</string>
+    <string name="exit_stop_recording">退出并停止录音</string>
+    <string name="exit_confirm_title">确定要彻底退出小E吗?</string>
+    <string name="exit_confirm_text">当前未保存的录音将被丢弃。</string>
+    <string name="exit_confirm_button">确认退出</string>
+    <string name="buffering_running">即时回放运行中</string>
+    <string name="saving">正在保存...</string>
+    <string name="review_title">已暂停, 请决定这段录音的去留</string>
+    <string name="empty_fragment">空片段</string>
+    <string name="empty_fragment_cant_play">空片段, 无法播放</string>
+    <string name="play_pause">播放/暂停</string>
+    <string name="move_to_longterm">移至长期</string>
+
+    <!-- 恢复弹窗 -->
+    <string name="recovery_title">由于您上次离开得太着急, 还好小E帮你暂停了!</string>
+    <string name="recovery_text">这里有一段未处理的录音, 要保留它吗?\n时间: %1$s</string>
+    <string name="keep">保留</string>
+
+    <!-- 列表页 -->
+    <string name="temporary_recordings">临时录音</string>
+    <string name="longterm_recordings">长期录音</string>
+    <string name="no_recordings">暂无录音</string>
+    <string name="no_recording_that_day">当天没有录音记录</string>
+    <string name="calendar">日历</string>
+    <string name="long_term">长期</string>
+    <string name="temporary">临时</string>
+    <string name="sync_public_dir">同步公共目录</string>
+    <string name="public_dir_management">公共目录文件</string>
+    <string name="save_to_public">保存到公共目录</string>
+
+    <!-- 多选 -->
+    <string name="selected_count">已选 %1$d</string>
+    <string name="batch_move_to_longterm">批量移至长期</string>
+    <string name="batch_delete">批量删除</string>
+    <string name="exit_selection">退出多选</string>
+
+    <!-- 设置页 -->
+    <string name="settings_buffer_title">即时回放缓冲时长</string>
+    <string name="settings_password_title">密码保护</string>
+    <string name="settings_password_subtitle">开启后, 冷启动与删除录音需输入密码</string>
+    <string name="settings_password_placeholder">(功能占位, 后续填充)</string>
+    <string name="restart_title">修改回音时长需要完全重启小E，是否继续？</string>
+    <string name="restart_text">重启后新的缓冲时长才会生效</string>
+    <string name="restart_button">重启</string>
+    <string name="save_pending_title">是否需要保存当前正在录制的音频?</string>
+    <string name="save_pending_text">选择保存会先把当前缓冲写入列表, 再重启小E</string>
+    <string name="dont_save">不保存</string>
+
+    <!-- 设置分组 -->
+    <string name="group_recording">录音设置</string>
+    <string name="group_security">安全设置</string>
+    <string name="group_storage">存储设置</string>
+    <string name="group_appearance">外观与语言</string>
+    <string name="group_help">帮助与关于</string>
+    <string name="buffer_duration">缓冲时长</string>
+    <string name="privacy_mode">隐私模式</string>
+    <string name="password_protection">密码保护</string>
+    <string name="change_password">修改密码</string>
+    <string name="view_recovery_key">恢复密钥查看</string>
+    <string name="public_dir_backup">公共目录备份</string>
+    <string name="public_dir_files">公共目录文件</string>
+    <string name="theme">主题</string>
+    <string name="language">语言</string>
+    <string name="how_to_use">如何使用小E</string>
+    <string name="privacy_policy">隐私政策</string>
+    <string name="about">关于</string>
+
+    <!-- 主题 -->
+    <string name="theme_light">明亮</string>
+    <string name="theme_dark">黑暗</string>
+    <string name="theme_system">跟随系统</string>
+
+    <!-- 语言 -->
+    <string name="language_selection_title">请选择语言</string>
+    <string name="language_zh">中文</string>
+    <string name="language_en">English</string>
+
+    <!-- 密码 -->
+    <string name="password_settings">密码设置</string>
+    <string name="password_type_title">选择密码类型</string>
+    <string name="password_type_pin">6 位数字密码</string>
+    <string name="password_type_pattern">图案密码</string>
+    <string name="pin_input_hint">请输入 6 位数字密码</string>
+    <string name="pin_confirm_hint">请再次输入密码</string>
+    <string name="pattern_input_hint">请绘制图案</string>
+    <string name="pattern_confirm_hint">请再次绘制图案</string>
+    <string name="pin_mismatch">两次输入的密码不一致</string>
+    <string name="pattern_mismatch">两次绘制的图案不一致</string>
+    <string name="pattern_too_short">至少连接 4 个点</string>
+    <string name="recovery_key_title">恢复密钥</string>
+    <string name="recovery_key_warning">注意: 这是恢复密钥, 不是重复输入密码。忘记密码时用它重置。请妥善保管, Echo 无法找回。</string>
+    <string name="recovery_key_label">您的恢复密钥: %1$s</string>
+    <string name="set_password">设置密码</string>
+    <string name="input_password">输入密码</string>
+    <string name="password_wrong">密码错误</string>
+    <string name="recovery_key_wrong">恢复密钥错误</string>
+    <string name="forgot_password">忘记密码?</string>
+    <string name="reset_password_with_recovery">使用恢复密钥重置密码</string>
+    <string name="lock_screen_subtitle">请输入密码进入小E</string>
+
+    <!-- 公共目录 -->
+    <string name="public_dir_enable_title">开启公共目录备份?</string>
+    <string name="public_dir_enable_text">开启后, 可将录音保存到 Downloads/EchoBackup, 防止卸载应用后丢失。</string>
+    <string name="public_dir_management_title">公共目录文件</string>
+    <string name="public_dir_management_note">此目录文件仅可删除, 不能播放</string>
+    <string name="double_verify_needed">删除公共目录文件需要双重验证</string>
+    <string name="double_verify_step2">请再次输入恢复密钥</string>
+    <string name="sync_public_dir_done">同步完成, 新增 %1$d 个文件</string>
+    <string name="save_to_public_done">已保存到公共目录</string>
+
+    <!-- 关于 -->
+    <string name="version">版本</string>
+    <string name="signature">SHA-256 指纹</string>
+    <string name="signature_note">在 GitHub Release 页面可核对本签名, 确保安装包未被篡改。</string>
+
+    <!-- 引导 -->
+    <string name="onboarding_skip">跳过</string>
+    <string name="onboarding_finish">开始使用</string>
+    <string name="onboarding1_title">欢迎使用小E</string>
+    <string name="onboarding1_text">小E是一款完全离线的即时回放录音应用, 帮你记住刚刚说过的话。</string>
+    <string name="onboarding2_title">即时回放</string>
+    <string name="onboarding2_text">小E始终在后台缓冲最近几分钟的音频, 按下暂停即可保存。</string>
+    <string name="onboarding3_title">日历与分类</string>
+    <string name="onboarding3_text">通过日历快速定位录音, 临时录音可一键转为长期保存。</string>
+    <string name="onboarding4_title">安全保护</string>
+    <string name="onboarding4_text">支持密码与图案锁, 保护你的录音隐私。</string>
+
+    <!-- 隐私协议 -->
+    <string name="privacy_title">隐私协议</string>
+    <string name="privacy_text">小E是一款完全离线的录音应用。\n\n1. 所有录音仅存储在您的设备本地, 绝不上传任何服务器。\n2. 应用不申请网络权限, 无法向外部传输数据。\n3. 录音文件由您完全掌控, 可随时删除。\n\n继续使用即表示您同意以上条款。</string>
+    <string name="agree">同意并继续</string>
 </resources>
