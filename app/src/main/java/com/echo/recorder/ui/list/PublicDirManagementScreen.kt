@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -62,11 +63,12 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
     val settings = remember { SettingsRepository(context) }
     val scope = rememberCoroutineScope()
 
+    val repoImpl = remember { repo as? com.echo.recorder.data.RecordingRepositoryImpl }
     val virtualRefs by produceState(initialValue = emptyList<Recording>()) {
-        repo.virtualRefsFlow().collect { value = it }
+        repoImpl?.virtualRefsFlow()?.collect { value = it }
     }
     val passwordEnabled by produceState(initialValue = false) {
-        settings.passwordEnabled.collect { value = it }
+        value = settings.passwordEnabled.first()
     }
 
     var pendingDelete by remember { mutableStateOf<Recording?>(null) }
@@ -76,11 +78,14 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
 
     val storedHash by produceState<String?>(initialValue = null) {
-        value = settings.passwordHash
+        value = settings.passwordHash.first()
     }
     val recoveryHash by produceState<String?>(initialValue = null) {
-        value = settings.recoveryHash
+        value = settings.recoveryHash.first()
     }
+    // 本地副本用于智能转换.
+    val hash = storedHash
+    val recHash = recoveryHash
 
     // 对话框.
     pendingDelete?.let { target ->
@@ -96,7 +101,7 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                         } else {
                             // 未开密码: 直接删除.
                             scope.launch {
-                                vfs.removeVirtualRef(target.id)
+                                repoImpl?.removeVirtualRef(target.id)
                                 PublicDirManager.deletePublic(context, target.id)
                             }
                             pendingDelete = null
@@ -126,7 +131,7 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (storedHash != null && PasswordCrypto.verify(input, storedHash)) {
+                        if (hash != null && PasswordCrypto.verify(input, hash)) {
                             verifyStep = 2; input = ""; error = null
                         } else {
                             error = "password_wrong"
@@ -156,9 +161,9 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (recoveryHash != null && PasswordCrypto.verify(input, recoveryHash)) {
+                        if (recHash != null && PasswordCrypto.verify(input, recHash)) {
                             scope.launch {
-                                vfs.removeVirtualRef(target.id)
+                                repoImpl?.removeVirtualRef(target.id)
                                 PublicDirManager.deletePublic(context, target.id)
                             }
                             pendingDelete = null; verifyStep = 0

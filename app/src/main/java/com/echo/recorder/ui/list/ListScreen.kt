@@ -1,5 +1,6 @@
 package com.echo.recorder.ui.list
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -49,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -56,11 +58,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.echo.recorder.R
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.playback.AudioPlayer
@@ -69,6 +73,7 @@ import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.share.ShareHelper
 import com.echo.recorder.ui.formatElapsed
 import com.echo.recorder.ui.lock.PasswordPromptDialog
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -237,13 +242,13 @@ private fun SaveToPublicHandler(
 ) {
     val settings = remember { SettingsRepository(context) }
     val passwordEnabled by produceState(initialValue = false) {
-        settings.passwordEnabled.collect { value = it }
+        value = settings.passwordEnabled.first()
     }
     val storedHash by produceState<String?>(initialValue = null) {
-        value = settings.passwordHash
+        value = settings.passwordHash.first()
     }
     val isPattern by produceState(initialValue = false) {
-        value = settings.passwordType.collect { it == "pattern" }; false
+        value = settings.passwordType.first() == "pattern"
     }
     var verified by remember { mutableStateOf(SessionAuth.savePublicUnlocked) }
 

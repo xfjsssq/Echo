@@ -38,7 +38,7 @@ data class ListUiState(
  * - 单条: 移至长期 / 删除.
  */
 class ListViewModel(
-    context: Context,
+    private val context: Context,
     private val repository: RecordingRepository = ServiceLocator.repository(context),
 ) : ViewModel() {
 
@@ -86,7 +86,7 @@ class ListViewModel(
             category = RecordingCategory.LONG_TERM,
             isPublicVirtual = true,
         )
-        repository.addVirtualRef(publicRec)
+        (repository as? com.echo.recorder.data.RecordingRepositoryImpl)?.addVirtualRef(publicRec)
         return true
     }
 
@@ -97,7 +97,7 @@ class ListViewModel(
         infos.forEach { info ->
             if (!vfs.exists(info.fileName)) {
                 val now = System.currentTimeMillis()
-                repository.addVirtualRef(
+                (repository as? com.echo.recorder.data.RecordingRepositoryImpl)?.addVirtualRef(
                     Recording(
                         id = info.fileName,
                         displayName = info.displayName,

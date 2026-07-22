@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,7 +35,7 @@ fun LockScreen(onUnlocked: () -> Unit) {
     var verified by remember { mutableStateOf(false) }
 
     val storedHash by produceState<String?>(initialValue = null) {
-        value = repo.passwordHash
+        value = repo.passwordHash.first()
     }
     val isPattern by produceState(initialValue = false) {
         value = repo.passwordType.first() == "pattern"

@@ -371,6 +371,7 @@ class RecordingService : Service() {
             Phase.BUFFERING -> if (!_saving.value) {
                 addActionToContent(content, pendingFlag)
             }
+            Phase.IDLE -> { /* 无操作按钮 */ }
             Phase.REVIEW -> {
                 content.setOnClickPendingIntent(
                     R.id.notification_title,

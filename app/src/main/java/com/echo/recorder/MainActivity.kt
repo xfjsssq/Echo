@@ -16,6 +16,7 @@ import androidx.lifecycle.LifecycleOwner
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.settings.ThemeMode
 import com.echo.recorder.ui.theme.EchoTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -53,8 +54,17 @@ class MainActivity : ComponentActivity() {
             this, Manifest.permission.RECORD_AUDIO,
         ) == PackageManager.PERMISSION_GRANTED
 
+        val themeMode = runBlocking {
+            runCatching { SettingsRepository(this@MainActivity).themeMode.first() }.getOrNull()
+        } ?: ThemeMode.SYSTEM
+        val darkTheme = when (themeMode) {
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+            ThemeMode.SYSTEM -> isSystemDark()
+        }
+
         setContent {
-            EchoTheme {
+            EchoTheme(darkTheme = darkTheme) {
                 EchoApp(
                     hasPermission = hasPermission,
                     onRequestPermission = { requestMicPermission() },
@@ -73,5 +83,10 @@ class MainActivity : ComponentActivity() {
         if (!hasPermission) {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    private fun isSystemDark(): Boolean {
+        val uiMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        return uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
     }
 }

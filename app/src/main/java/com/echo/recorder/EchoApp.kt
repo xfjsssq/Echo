@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -90,10 +91,10 @@ fun EchoApp(
     // 彻底退出密码门控 (实时验证).
     if (askExitPassword) {
         val storedHash by produceState<String?>(initialValue = null) {
-            value = settings.passwordHash
+            value = settings.passwordHash.first()
         }
         val passwordType by produceState<String?>(initialValue = null) {
-            settings.passwordType.collect { value = it }
+            value = settings.passwordType.first()
         }
         val isPattern = passwordType == "pattern"
         PasswordPromptDialog(
