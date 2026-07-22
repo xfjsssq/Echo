@@ -60,11 +60,15 @@ fun SettingsScreen(
     var showRestart by remember { mutableStateOf(false) }
     var showSavePending by remember { mutableStateOf(false) }
     var pendingSeconds by remember { mutableStateOf<Int?>(null) }
+    // I3: 暂存选中项, 取消时回弹到真实值而非立即提交.
+    var pendingSelected by remember { mutableStateOf<BufferDuration?>(null) }
+    // 当前显示选中项: 有未确认的改动时显示暂存值, 否则显示真实值.
+    val displaySelected = pendingSelected ?: selected
 
-    // 第一层确认: 修改缓冲时长需重启.
+    // 第一确认: 修改缓冲时长需重启.
     if (showRestart) {
         AlertDialog(
-            onDismissRequest = { showRestart = false },
+            onDismissRequest = { showRestart = false; pendingSelected = null },
             title = { Text("修改回音时长需要完全重启小E，是否继续？") },
             text = { Text("重启后新的缓冲时长才会生效") },
             confirmButton = {
@@ -78,6 +82,7 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     showRestart = false
                     pendingSeconds = null
+                    pendingSelected = null // I3: 取消回弹到真实值.
                 }) { Text("取消") }
             },
         )
@@ -87,7 +92,7 @@ fun SettingsScreen(
     if (showSavePending) {
         val secs = pendingSeconds
         AlertDialog(
-            onDismissRequest = { showSavePending = false; pendingSeconds = null },
+            onDismissRequest = { showSavePending = false; pendingSeconds = null; pendingSelected = null },
             title = { Text("是否需要保存当前正在录制的音频?") },
             text = { Text("选择保存会先把当前缓冲写入列表, 再重启小E") },
             confirmButton = {
@@ -95,6 +100,9 @@ fun SettingsScreen(
                     showSavePending = false
                     val s = secs
                     pendingSeconds = null
+                    // I3: 确认后才真正提交选中项.
+                    if (pendingSelected != null) selected = pendingSelected!!
+                    pendingSelected = null
                     if (s != null) scope.launch { repo.setBufferSeconds(s) }
                     onRestartService(true)
                 }) { Text("保存") }
@@ -128,10 +136,10 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .selectable(
-                                selected = selected == dur,
+                                selected = displaySelected == dur,
                                 onClick = {
-                                    selected = dur
-                                    // 仅当相对当前持久值真的有改动才触发重启流程.
+                                    // I3: 仅暂存, 不立即提交; 取消时会回弹.
+                                    pendingSelected = dur
                                     pendingSeconds = dur.seconds
                                     showRestart = true
                                 },
@@ -139,7 +147,7 @@ fun SettingsScreen(
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(selected = selected == dur, onClick = null)
+                        RadioButton(selected = displaySelected == dur, onClick = null)
                         Text(
                             text = dur.label + "  (" + dur.estimatedMb + ")",
                             modifier = Modifier.padding(start = 12.dp),
