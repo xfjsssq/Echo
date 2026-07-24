@@ -31,7 +31,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +43,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.echo.recorder.R
 import com.echo.recorder.auth.SessionAuth
+import com.echo.recorder.common.PublicDirManager
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.playback.AudioPlayer
 import com.echo.recorder.playback.DefaultAudioPlayerFactory
@@ -95,8 +97,8 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
 
     var showCalendar by remember { mutableStateOf(false) }
     var pendingSaveToPublic by remember { mutableStateOf<Recording?>(null) }
+    var showImport by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
 
     val items = if (state.tab == ListTab.TEMPORARY) state.temporary else state.longTerm
     val groups = items.groupBy { dateKey(it.createdAt) }
@@ -127,17 +129,10 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                 TopAppBar(
                     title = { Text(stringResource(R.string.record_list)) },
                     actions = {
-                        IconButton(onClick = {
-                            scope.launch {
-                                val added = viewModel.syncPublic(context)
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.sync_public_dir_done, added),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                        if (state.tab == ListTab.LONG_TERM) {
+                            IconButton(onClick = { showImport = true }) {
+                                Icon(Icons.Filled.FileOpen, contentDescription = stringResource(R.string.import_from_public_dir))
                             }
-                        }) {
-                            Icon(Icons.Filled.Sync, contentDescription = stringResource(R.string.sync_public_dir))
                         }
                         IconButton(onClick = { showCalendar = true }) {
                             Icon(Icons.Filled.CalendarMonth, contentDescription = stringResource(R.string.calendar))
@@ -230,6 +225,15 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
             onDone = { pendingSaveToPublic = null },
         )
     }
+
+    // 从公共目录导入 (含密码门禁).
+    if (showImport) {
+        ImportFromPublicDirDialog(
+            context = context,
+            viewModel = viewModel,
+            onDismiss = { showImport = false },
+        )
+    }
 }
 
 /** 保存到公共目录: 首次离开应用后需密码, 本会话内免密. */
@@ -278,6 +282,123 @@ private fun SaveToPublicHandler(
     } else {
         LaunchedEffect(rec.id) { verified = true }
     }
+}
+
+/**
+ * 从公共目录导入对话框.
+ * - 若开启密码保护, 先验证密码.
+ * - 验证通过后列出公共目录中尚未导入的 .m4a 文件, 用户多选后导入为虚引用.
+ */
+@Composable
+private fun ImportFromPublicDirDialog(
+    context: Context,
+    viewModel: ListViewModel,
+    onDismiss: () -> Unit,
+) {
+    val settings = remember { SettingsRepository(context) }
+    val scope = rememberCoroutineScope()
+    val passwordEnabled by produceState(initialValue = false) {
+        value = settings.passwordEnabled.first()
+    }
+    val storedHash by produceState<String?>(initialValue = null) {
+        value = settings.passwordHash.first()
+    }
+    val isPattern by produceState(initialValue = false) {
+        value = settings.passwordType.first() == "pattern"
+    }
+    var verified by remember { mutableStateOf(SessionAuth.savePublicUnlocked) }
+    var importable by remember { mutableStateOf<List<PublicDirManager.PublicFileInfo>>(emptyList()) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var loading by remember { mutableStateOf(false) }
+
+    // 验证通过后扫描可导入文件.
+    LaunchedEffect(verified) {
+        if (verified) {
+            loading = true
+            importable = viewModel.scanImportable(context)
+            loading = false
+        }
+    }
+
+    if (!verified) {
+        if (passwordEnabled) {
+            PasswordPromptDialog(
+                storedHash = storedHash,
+                recoveryHash = null,
+                isPattern = isPattern,
+                onVerify = { verified = true },
+                onDismiss = onDismiss,
+            )
+        } else {
+            LaunchedEffect(Unit) { verified = true }
+        }
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.import_from_public_dir_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(R.string.import_from_public_dir_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (loading) {
+                    Text("...", style = MaterialTheme.typography.bodyMedium)
+                } else if (importable.isEmpty()) {
+                    Text(
+                        stringResource(R.string.import_no_new),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+                        items(importable, key = { it.fileName }) { info ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selected = if (info.fileName in selected) selected - info.fileName else selected + info.fileName
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    if (info.fileName in selected) Icons.Filled.CheckCircle else Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    tint = if (info.fileName in selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                                Spacer(Modifier.size(12.dp))
+                                Text(info.displayName, style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    scope.launch {
+                        val added = viewModel.importFromPublicDir(context, selected.toList())
+                        SessionAuth.savePublicUnlocked = true
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.import_done, added),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        onDismiss()
+                    }
+                },
+                enabled = selected.isNotEmpty(),
+            ) { Text(stringResource(R.string.import_selected)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 private fun shareRecording(context: Context, rec: Recording) {

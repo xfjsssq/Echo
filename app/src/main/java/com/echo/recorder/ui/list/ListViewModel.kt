@@ -71,45 +71,57 @@ class ListViewModel(
     fun delete(id: String) = viewModelScope.launch { repository.delete(id) }
 
     /**
-     * 保存到公共目录: 复制到 Downloads/EchoBackup, 删除私有原文件, 登记虚引用.
-     * @return 成功时返回 Unit, 失败返回 null.
+     * 保存到公共目录: 复制到公共目录后立即从列表移除 (不保留虚引用).
+     * 文件从此只存在于公共目录, 应用内不再可见.
+     * @return 成功返回 true.
      */
     suspend fun saveToPublic(context: Context, rec: Recording): Boolean {
         val src = runCatching { java.io.File(java.net.URI(rec.fileUrl)) }.getOrNull() ?: return false
         if (!src.exists()) return false
-        val dest = PublicDirManager.copyToPublic(context, rec, src) ?: return false
-        // 删除私有原文件并从数据源移除.
+        // 复制到公共目录 (仅校验是否成功, 不保留 dest).
+        val ok = PublicDirManager.copyToPublic(context, rec, src) != null
+        if (!ok) return false
+        // 删除私有原文件并从数据源移除 (不登记虚引用).
+        runCatching { if (src.exists()) src.delete() }
         repository.delete(rec.id)
-        // 登记虚引用 (指向公共路径).
-        val publicRec = rec.copy(
-            fileUrl = dest.toURI().toString(),
-            category = RecordingCategory.LONG_TERM,
-            isPublicVirtual = true,
-        )
-        (repository as? com.echo.recorder.data.RecordingRepositoryImpl)?.addVirtualRef(publicRec)
         return true
     }
 
-    /** 扫描公共目录并同步虚引用到列表. @return 新增数量. */
-    suspend fun syncPublic(context: Context): Int {
-        val infos = PublicDirManager.scanPublic(context)
+    /**
+     * 扫描公共目录中尚未导入的 .m4a 文件.
+     * @return 可导入的文件信息列表.
+     */
+    suspend fun scanImportable(context: Context): List<PublicDirManager.PublicFileInfo> {
+        val all = PublicDirManager.scanPublic(context)
+        val vfs = ServiceLocator.virtualRefStore(context)
+        return all.filter { !vfs.exists(java.io.File(PublicDirManager.publicDir(), it.fileName).toURI().toString()) }
+    }
+
+    /**
+     * 从公共目录导入指定文件为虚引用 (不复制文件).
+     * @return 实际新增数量.
+     */
+    suspend fun importFromPublicDir(context: Context, fileNames: List<String>): Int {
+        val repoImpl = repository as? com.echo.recorder.data.RecordingRepositoryImpl ?: return 0
+        val vfs = ServiceLocator.virtualRefStore(context)
         var added = 0
-        infos.forEach { info ->
-            if (!vfs.exists(info.fileName)) {
-                val now = System.currentTimeMillis()
-                (repository as? com.echo.recorder.data.RecordingRepositoryImpl)?.addVirtualRef(
-                    Recording(
-                        id = info.fileName,
-                        displayName = info.displayName,
-                        fileUrl = java.io.File(PublicDirManager.publicDir(), info.fileName).toURI().toString(),
-                        createdAt = now,
-                        durationMs = 0L,
-                        category = RecordingCategory.LONG_TERM,
-                        isPublicVirtual = true,
-                    ),
-                )
-                added++
-            }
+        val now = System.currentTimeMillis()
+        fileNames.forEach { name ->
+            val file = java.io.File(PublicDirManager.publicDir(), name)
+            val fileUrl = file.toURI().toString()
+            if (vfs.exists(fileUrl)) return@forEach
+            repoImpl.addVirtualRef(
+                Recording(
+                    id = name,
+                    displayName = name,
+                    fileUrl = fileUrl,
+                    createdAt = now,
+                    durationMs = 0L,
+                    category = RecordingCategory.LONG_TERM,
+                    isPublicVirtual = true,
+                ),
+            )
+            added++
         }
         return added
     }

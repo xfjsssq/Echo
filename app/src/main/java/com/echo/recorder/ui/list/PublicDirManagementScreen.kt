@@ -51,8 +51,9 @@ import kotlinx.coroutines.launch
 /**
  * 公共目录文件管理界面.
  *
- * 列出所有虚引用文件, 仅可删除 (不可播放). 删除需双重验证 (若已开密码): 应用密码 + 恢复密钥;
- * 未开密码时仅一次确认.
+ * 列出所有虚引用文件, 仅可删除 (不可播放).
+ * 删除操作仅移除应用内虚引用条目, 不影响公共目录中的实际文件.
+ * 删除需双重验证 (若已开密码): 应用密码 + 恢复密钥; 未开密码时仅一次确认.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,17 +94,23 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
             0 -> AlertDialog(
                 onDismissRequest = { pendingDelete = null },
                 title = { Text(stringResource(R.string.delete)) },
-                text = { Text(target.displayName) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(target.displayName)
+                        Text(
+                            stringResource(R.string.public_dir_delete_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 confirmButton = {
                     TextButton(onClick = {
                         if (passwordEnabled) {
                             verifyStep = 1; input = ""; error = null
                         } else {
-                            // 未开密码: 直接删除.
-                            scope.launch {
-                                repoImpl?.removeVirtualRef(target.id)
-                                PublicDirManager.deletePublic(context, target.id)
-                            }
+                            // 未开密码: 仅移除虚引用, 不删实际文件.
+                            scope.launch { repoImpl?.removeVirtualRef(target.id) }
                             pendingDelete = null
                         }
                     }) { Text(stringResource(R.string.confirm)) }
@@ -162,10 +169,8 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                 confirmButton = {
                     TextButton(onClick = {
                         if (recHash != null && PasswordCrypto.verify(input, recHash)) {
-                            scope.launch {
-                                repoImpl?.removeVirtualRef(target.id)
-                                PublicDirManager.deletePublic(context, target.id)
-                            }
+                            // 仅移除虚引用, 不删实际文件.
+                            scope.launch { repoImpl?.removeVirtualRef(target.id) }
                             pendingDelete = null; verifyStep = 0
                         } else {
                             error = "recovery_key_wrong"

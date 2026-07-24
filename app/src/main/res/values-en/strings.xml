@@ -136,13 +136,20 @@
 
     <!-- Public directory -->
     <string name="public_dir_enable_title">Enable public directory backup?</string>
-    <string name="public_dir_enable_text">When enabled, recordings can be saved to Downloads/EchoBackup so they survive app uninstall.</string>
+    <string name="public_dir_enable_text">When enabled, long-term recordings can be saved to public storage so they survive app uninstall. Re-import them after reinstall.</string>
     <string name="public_dir_management_title">Public directory files</string>
     <string name="public_dir_management_note">Files here can only be deleted, not played</string>
     <string name="double_verify_needed">Deleting a public file requires double verification</string>
     <string name="double_verify_step2">Enter the recovery key again</string>
     <string name="sync_public_dir_done">Sync complete, %1$d new file(s) added</string>
     <string name="save_to_public_done">Saved to public directory</string>
+    <string name="import_from_public_dir">Import</string>
+    <string name="import_from_public_dir_title">Import from public directory</string>
+    <string name="import_from_public_dir_note">Select recordings to import into the long-term list</string>
+    <string name="import_selected">Import selected</string>
+    <string name="import_done">Imported %1$d file(s)</string>
+    <string name="import_no_new">No new files to import</string>
+    <string name="public_dir_delete_note">Only removes from list; does not affect files in public directory</string>
 
     <!-- About -->
     <string name="version">Version</string>
