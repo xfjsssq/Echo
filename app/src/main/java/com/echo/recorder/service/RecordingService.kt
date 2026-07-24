@@ -13,7 +13,6 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
-import android.widget.RemoteViews
 import com.echo.recorder.R
 import com.echo.recorder.ServiceLocator
 import com.echo.recorder.common.pendingDir
@@ -75,7 +74,8 @@ class RecordingService : Service() {
         const val DEFAULT_BUFFER_SECONDS = 180
         const val CHANNEL_ID = "echo_recording"
         const val NOTIFICATION_ID = 1001
-        const val ROTATE_INTERVAL_MS = 3000L
+        /** 文案轮换间隔 (ms). */
+        const val ROTATE_INTERVAL_MS = 4000L
         const val ACTION_START = "com.echo.recorder.action.START"
         const val ACTION_STOP = "com.echo.recorder.action.STOP"
         const val ACTION_PAUSE = "com.echo.recorder.action.PAUSE"
@@ -104,10 +104,6 @@ class RecordingService : Service() {
 
         /** 低于此时长(ms)的缓冲视为空片段, 不创建文件. */
         const val MIN_SAVE_DURATION_MS = 1000L
-
-        /** 淡入淡出动画步进 (帧数). */
-        const val FADE_STEPS = 6
-        const val FADE_STEP_MS = 50L
     }
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -242,70 +238,35 @@ class RecordingService : Service() {
         rotateJob = scope.launch {
             while (isActive) {
                 delay(ROTATE_INTERVAL_MS)
-                // I2: 文案切换使用淡入淡出, 3 秒一次, 随机不重复.
-                fadeTo(randomBufferingText())
+                // 文案切换为瞬时切换 (系统会节流频繁 notify).
+                val text = randomBufferingText()
+                updateNotificationText(text)
             }
         }
+    }
+
+    /** 仅更新通知文案并 notify. */
+    private fun updateNotificationText(text: String) {
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val n = buildNotification(text)
+        mgr.notify(NOTIFICATION_ID, n)
     }
 
     private fun stopRotate() {
         rotateJob?.cancel(); rotateJob = null
     }
 
-    /** 将通知标题文案淡出 -> 替换 -> 淡入. */
-    private fun fadeTo(newTitle: String) {
-        val content = RemoteViews(packageName, R.layout.notification_echo)
-        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val stepMs = FADE_STEP_MS
-        val steps = FADE_STEPS
-        // 淡出.
-        for (i in steps downTo 0) {
-            val c = RemoteViews(packageName, R.layout.notification_echo)
-            applyTitle(c, lastTitle)
-            c.setFloat(R.id.notification_title, "setAlpha", i.toFloat() / steps)
-            notifyNow(c, mgr)
-            Thread.sleep(stepMs)
-        }
-        // 替换文案.
-        lastTitle = newTitle
-        // 淡入.
-        for (i in 0..steps) {
-            val c = RemoteViews(packageName, R.layout.notification_echo)
-            applyTitle(c, newTitle)
-            c.setFloat(R.id.notification_title, "setAlpha", i.toFloat() / steps)
-            notifyNow(c, mgr)
-            Thread.sleep(stepMs)
-        }
-    }
-
-    private fun applyTitle(c: RemoteViews, title: String) {
-        c.setTextViewText(R.id.notification_title, title)
-        c.setTextViewText(R.id.notification_text, "所有音频只在本地, 按下暂停即可保存最近几分钟")
-    }
-
-    private fun notifyNow(content: RemoteViews, mgr: NotificationManager) {
-        val pendingFlag = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val n = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setOngoing(true)
-            .setSilent(true)
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(content)
-            .build()
-        mgr.notify(NOTIFICATION_ID, n)
-    }
-
-    private var lastTitle: String = ""
-
     private fun rebuildNotification() {
-        lastTitle = when {
+        val text = when {
             _saving.value -> "正在保存..."
             _phase.value == Phase.IDLE -> "小E随时等待您的指令"
             _phase.value == Phase.REVIEW -> "已暂停, 请决定这段录音的去留"
-            else -> randomBufferingText()
+            else -> lastRotatedText
         }
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForeground(NOTIFICATION_ID, buildNotification(text))
     }
+
+    private var lastRotatedText: String = ""
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -327,67 +288,63 @@ class RecordingService : Service() {
 
     private fun randomBufferingText(): String {
         val list = BUFFERING_TEXTS
-        if (list.size <= 1) return list.first()
+        if (list.size <= 1) return list.first().also { lastRotatedText = it }
         var idx = (Math.random() * list.size).toInt()
         if (idx == lastTextIndex) idx = (idx + 1) % list.size
         lastTextIndex = idx
-        return list[idx]
+        return list[idx].also { lastRotatedText = it }
     }
 
-    private fun buildNotification(): Notification {
+    /**
+     * 构建标准通知 (NotificationCompat.Builder).
+     *
+     * - 不调用 setColorized, 不硬编码文字颜色, 完全依赖系统默认.
+     * - BUFFERING: 1 个"暂停" Action.
+     * - REVIEW: "保存" + "删除" 两个 Action.
+     * - IDLE: 无操作按钮.
+     */
+    private fun buildNotification(text: String = ""): Notification {
         val pendingFlag = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val content = RemoteViews(packageName, R.layout.notification_echo)
-        val title: String
-        val text: String
+        val title = "小E"
+        val contentText: String
         when {
-            // I1: 后台保存中优先显示保存态, 避免卡死假象.
-            _saving.value -> {
-                title = "正在保存..."
-                text = "请稍候, 小E正在把录音写入列表"
-            }
-            _phase.value == Phase.IDLE -> {
-                title = "小E随时等待您的指令"
-                text = "点击主界面开始按钮开启即时回放"
-            }
-            _phase.value == Phase.REVIEW -> {
-                title = "已暂停, 请决定这段录音的去留"
-                text = "保存到列表, 或丢弃继续回放"
-            }
-            else -> {
-                title = randomBufferingText()
-                text = "所有音频只在本地, 按下暂停即可保存最近几分钟"
-            }
+            _saving.value -> contentText = "正在保存..."
+            _phase.value == Phase.IDLE -> contentText = "小E随时等待您的指令"
+            _phase.value == Phase.REVIEW -> contentText = "已暂停, 请决定这段录音的去留"
+            else -> contentText = if (text.isNotEmpty()) text else randomBufferingText()
         }
-        content.setTextViewText(R.id.notification_title, title)
-        content.setTextViewText(R.id.notification_text, text)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle(title)
+            .setContentText(contentText)
             .setOngoing(true)
             .setSilent(true)
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(content)
+            .setOnlyAlertOnce(true)
+
         when (_phase.value) {
             Phase.BUFFERING -> if (!_saving.value) {
-                addActionToContent(content, pendingFlag)
+                builder.addAction(
+                    android.R.drawable.ic_media_pause,
+                    "暂停",
+                    pendingIntent(ACTION_PAUSE, pendingFlag),
+                )
             }
             Phase.IDLE -> { /* 无操作按钮 */ }
             Phase.REVIEW -> {
-                content.setOnClickPendingIntent(
-                    R.id.notification_title,
+                builder.addAction(
+                    android.R.drawable.ic_menu_save,
+                    "保存",
                     pendingIntent(ACTION_SAVE, pendingFlag),
+                )
+                builder.addAction(
+                    android.R.drawable.ic_menu_delete,
+                    "删除",
+                    pendingIntent(ACTION_DELETE, pendingFlag),
                 )
             }
         }
         return builder.build()
-    }
-
-    /** 为 BUFFERING 态的文案区域附加暂停点击 (点击通知文案区触发暂停). */
-    private fun addActionToContent(content: RemoteViews, pendingFlag: Int) {
-        content.setOnClickPendingIntent(
-            R.id.notification_text,
-            pendingIntent(ACTION_PAUSE, pendingFlag),
-        )
     }
 
     /** 彻底退出: 标记为干净退出并停服务, 不产生紧急保存文件. */
