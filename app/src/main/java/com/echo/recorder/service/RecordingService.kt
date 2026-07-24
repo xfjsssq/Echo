@@ -211,16 +211,22 @@ class RecordingService : Service() {
     private fun handleRestart(savePending: Boolean) {
         val cb = buffer
         if (savePending && cb != null) {
+            // 保存期间显示"正在保存"态, 避免用户以为卡死.
+            _saving.value = true
+            rebuildNotification()
             val dest = File(pendingDir(this), "echo_${System.currentTimeMillis()}.m4a")
+            // 同步等待保存完成后再重启, 避免 exitProcess 强杀导致 0 秒文件.
             val dur = cb.save(dest)
             if (dur > 0L) runBlocking { repo().create(dest, dur) }
+            _saving.value = false
         } else {
             cb?.discard()
         }
         stopRotate()
         _phase.value = Phase.IDLE
         rebuildNotification()
-        Handler(Looper.getMainLooper()).postDelayed({ restartProcess() }, 400)
+        // 保存完成后立即重启, 不再需要固定延迟.
+        restartProcess()
     }
 
     private fun restartProcess() {
