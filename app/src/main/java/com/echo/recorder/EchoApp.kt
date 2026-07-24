@@ -12,12 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,6 +26,7 @@ import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.settings.ThemeMode
 import com.echo.recorder.ui.lock.LockScreen
 import com.echo.recorder.ui.lock.PasswordPromptDialog
 import com.echo.recorder.ui.navigation.EchoNavHost
@@ -42,6 +43,12 @@ import kotlinx.coroutines.launch
  * - 启动时做一次 UNPROCESSED 检查 (冷启动恢复弹窗).
  * - 冷启动密码锁屏: 开启密码保护时, 进入主界面需先验证.
  * - onRestartService: 设置页改缓冲时长后重启服务 (按新 N 重新绑定).
+ *
+ * 初始化流程 (F1):
+ *   step 0: 语言选择 (选完重建 Activity, 重建后 step 进入 1)
+ *   step 1: 隐私协议
+ *   step 2: 引导卡片 (含公共目录备份 + 主题选择)
+ *   step 3: 主界面 (此时才触发权限请求)
  */
 @Composable
 fun EchoApp(
@@ -61,23 +68,61 @@ fun EchoApp(
         settings.passwordEnabled.collect { value = it }
     }
 
-    // 首次启动引导: 隐私协议 -> 语言选择 -> 引导卡片 -> 进入主界面 (F1).
-    val onboardingDone by produceState(initialValue = true) {
+    // 首次启动引导: 语言选择 -> 隐私协议 -> 引导卡片 -> 主界面.
+    // 初始值 false, 等 DataStore 读到真实值后再决定是否跳过.
+    val onboardingDone by produceState(initialValue = false) {
         settings.onboardingDone.collect { value = it }
     }
+
+    // 读取已保存的语言 (用于判断重建后是否已选过语言).
+    val savedLanguage by produceState<String?>(initialValue = null) {
+        settings.language.collect { value = it }
+    }
+
+    // step 用 rememberSaveable, 语言选择重建 Activity 后仍能恢复.
     if (!onboardingDone) {
-        var step by remember { mutableIntStateOf(0) }
-        when (step) {
-            0 -> PrivacyAgreementScreen(onAgree = { step = 1 })
-            1 -> LanguagePickerScreen(onPick = { code ->
-                scope.launch { settings.setLanguage(code) }
-                step = 2
-            })
-            2 -> OnboardingScreen(onFinish = {
-                scope.launch { settings.setOnboardingDone(true) }
-            })
+        var step by rememberSaveable { mutableStateOf(0) }
+        // 重建后若已有语言且 step 还在 0, 自动跳到隐私协议 (避免无限重建).
+        LaunchedEffect(savedLanguage, step) {
+            if (step == 0 && savedLanguage != null) {
+                step = 1
+            }
         }
-        return
+        when (step) {
+            0 -> LanguagePickerScreen(onPick = { code ->
+                scope.launch { settings.setLanguage(code) }
+                // 重建 Activity 以应用新语言; 重建后 step 恢复为 0,
+                // 但此时语言已是目标语言, 用户再次选择会再重建.
+                // 为避免无限重建, 语言选完后直接跳到隐私协议.
+                step = 1
+                val activity = context as? android.app.Activity
+                if (activity != null && !activity.isFinishing) {
+                    LocaleManager.recreate(activity)
+                }
+            })
+            1 -> PrivacyAgreementScreen(onAgree = { step = 2 })
+            2 -> OnboardingScreen(
+                onFinish = {
+                    scope.launch { settings.setOnboardingDone(true) }
+                    step = 3
+                },
+                onEnablePublicDir = {
+                    scope.launch { settings.setPublicDirEnabled(true) }
+                },
+                onSelectTheme = { mode ->
+                    scope.launch { settings.setThemeMode(mode) }
+                },
+            )
+            3 -> {
+                // 引导完成, 进入主界面前先请求权限.
+                LaunchedEffect(Unit) {
+                    if (!hasPermission) onRequestPermission()
+                }
+                // 继续往下执行主界面逻辑 (不 return).
+            }
+        }
+        // step 0~2 时直接 return, 不渲染主界面.
+        if (step < 3) return
     }
 
     // 冷启动锁屏: 开启密码且本会话未解锁时, 全屏覆盖锁屏层.

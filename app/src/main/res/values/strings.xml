@@ -136,6 +136,7 @@
 
     <!-- 引导 -->
     <string name="onboarding_skip">跳过</string>
+    <string name="onboarding_next">下一步</string>
     <string name="onboarding_finish">开始使用</string>
     <string name="onboarding1_title">欢迎使用小E</string>
     <string name="onboarding1_text">小E是一款完全离线的即时回放录音应用, 帮你记住刚刚说过的话。</string>
@@ -143,8 +144,13 @@
     <string name="onboarding2_text">小E始终在后台缓冲最近几分钟的音频, 按下暂停即可保存。</string>
     <string name="onboarding3_title">日历与分类</string>
     <string name="onboarding3_text">通过日历快速定位录音, 临时录音可一键转为长期保存。</string>
-    <string name="onboarding4_title">安全保护</string>
-    <string name="onboarding4_text">支持密码与图案锁, 保护你的录音隐私。</string>
+    <string name="onboarding4_title">公共目录备份</string>
+    <string name="onboarding4_text">开启后, 录音可保存到 Downloads/EchoBackup, 即使卸载应用也不会丢失。</string>
+    <string name="onboarding4_action">立即开启</string>
+    <string name="onboarding5_title">安全保护</string>
+    <string name="onboarding5_text">支持密码与图案锁, 保护你的录音隐私。</string>
+    <string name="onboarding6_title">选择主题</string>
+    <string name="onboarding6_text">挑选你喜欢的界面主题, 也可以随时在设置中修改。</string>
 
     <!-- 隐私协议 -->
     <string name="privacy_title">隐私协议</string>

@@ -136,6 +136,7 @@
 
     <!-- Onboarding -->
     <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
     <string name="onboarding_finish">Get started</string>
     <string name="onboarding1_title">Welcome to Echo</string>
     <string name="onboarding1_text">Echo is a fully offline instant-replay recorder that helps you remember what was just said.</string>
@@ -143,8 +144,13 @@
     <string name="onboarding2_text">Echo always buffers the last few minutes — tap pause to save them.</string>
     <string name="onboarding3_title">Calendar &amp; categories</string>
     <string name="onboarding3_text">Find recordings quickly with the calendar, and move clips to long-term with one tap.</string>
-    <string name="onboarding4_title">Security</string>
-    <string name="onboarding4_text">Protect your recordings with a PIN or pattern lock.</string>
+    <string name="onboarding4_title">Public directory backup</string>
+    <string name="onboarding4_text">When enabled, recordings are saved to Downloads/EchoBackup so they survive app uninstall.</string>
+    <string name="onboarding4_action">Enable now</string>
+    <string name="onboarding5_title">Security</string>
+    <string name="onboarding5_text">Protect your recordings with a PIN or pattern lock.</string>
+    <string name="onboarding6_title">Choose theme</string>
+    <string name="onboarding6_text">Pick your preferred theme — you can always change it later in settings.</string>
 
     <!-- Privacy -->
     <string name="privacy_title">Privacy policy</string>
