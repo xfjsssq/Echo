@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,7 +41,9 @@ import kotlinx.coroutines.launch
 /**
  * 密码设置流程.
  *
- * 步骤: 选择类型 (数字/图案) -> 输入 -> 确认 -> 生成恢复密钥 (强制展示警告).
+ * 数字密码: 选类型 → 输入 6 位 → 确认按钮 → 再次输入 → 一致则生成恢复密钥.
+ * 图案密码: 选类型 → 绘制图案 → 图案保留 + 确认按钮 → 再次绘制 → 一致则生成恢复密钥.
+ * 不一致则提示并回到第一次输入.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,13 +55,15 @@ fun PasswordSetupScreen(
     val repo = remember { SettingsRepository(context) }
     val scope = rememberCoroutineScope()
 
-    // 0=选类型 1=输入 2=确认 3=恢复密钥
-    var step by remember { mutableStateOf(0) }
+    // 0=选类型 1=第一次输入 2=第二次输入 3=恢复密钥展示
+    var step by remember { mutableIntStateOf(0) }
     var isPattern by remember { mutableStateOf(false) }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var recoveryKey by remember { mutableStateOf<String?>(null) }
+    // 图案重置 key, 用于清空 PatternLockView.
+    var patternResetKey by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -83,15 +88,17 @@ fun PasswordSetupScreen(
                     onPickPin = { isPattern = false; step = 1 },
                     onPickPattern = { isPattern = true; step = 1 },
                 )
-                1 -> EnterPassword(
+                1 -> FirstEnter(
                     isPattern = isPattern,
                     label = if (isPattern) R.string.pattern_input_hint else R.string.pin_input_hint,
-                    onEnter = { first = it; second = ""; error = null; step = 2 },
+                    resetKey = patternResetKey,
+                    onDrawn = { first = it; error = null; step = 2 },
                 )
-                2 -> ConfirmPassword(
+                2 -> SecondEnter(
                     isPattern = isPattern,
                     first = first,
                     label = if (isPattern) R.string.pattern_confirm_hint else R.string.pin_confirm_hint,
+                    resetKey = patternResetKey,
                     error = error,
                     onConfirm = { second = it; error = null
                         if (second == first) {
@@ -108,7 +115,11 @@ fun PasswordSetupScreen(
                             }
                             step = 3
                         } else {
-                            error = if (isPattern) "pattern_mismatch" else "pin_mismatch"
+                            // 不一致: 回到第一次输入.
+                            error = if (isPattern) "pattern_not_match" else "pin_not_match"
+                            first = ""; second = ""
+                            patternResetKey++
+                            step = 1
                         }
                     },
                 )
@@ -138,15 +149,31 @@ private fun TypeSelect(onPickPin: () -> Unit, onPickPattern: () -> Unit) {
 }
 
 @Composable
-private fun EnterPassword(isPattern: Boolean, label: Int, onEnter: (String) -> Unit) {
+private fun FirstEnter(
+    isPattern: Boolean,
+    label: Int,
+    resetKey: Int,
+    onDrawn: (String) -> Unit,
+) {
     if (isPattern) {
         Text(stringResource(label), modifier = Modifier.padding(bottom = 16.dp))
         var drawn by remember { mutableStateOf<List<Int>>(emptyList()) }
-        PatternLockView(onPatternComplete = { drawn = it })
-        Button(
-            onClick = { if (drawn.size >= 4) onEnter(drawn.joinToString(",")) },
-            modifier = Modifier.padding(top = 16.dp),
-        ) { Text(stringResource(R.string.confirm)) }
+        PatternLockView(
+            resetKey = resetKey,
+            onPatternComplete = { drawn = it },
+        )
+        // 绘制完成后显示确认按钮 (图案保留在屏幕上).
+        if (drawn.size >= 4) {
+            Text(
+                stringResource(R.string.pattern_first_drawn),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            Button(
+                onClick = { onDrawn(drawn.joinToString(",")) },
+                modifier = Modifier.padding(top = 8.dp),
+            ) { Text(stringResource(R.string.confirm)) }
+        }
     } else {
         var value by remember { mutableStateOf("") }
         OutlinedTextField(
@@ -158,30 +185,44 @@ private fun EnterPassword(isPattern: Boolean, label: Int, onEnter: (String) -> U
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        Button(
-            onClick = { if (value.length == 6) onEnter(value) },
-            modifier = Modifier.padding(top = 16.dp),
-        ) { Text(stringResource(R.string.confirm)) }
+        if (value.length == 6) {
+            Button(
+                onClick = { onDrawn(value) },
+                modifier = Modifier.padding(top = 16.dp),
+            ) { Text(stringResource(R.string.confirm)) }
+        }
     }
 }
 
 @Composable
-private fun ConfirmPassword(
+private fun SecondEnter(
     isPattern: Boolean,
     first: String,
     label: Int,
+    resetKey: Int,
     error: String?,
     onConfirm: (String) -> Unit,
 ) {
     if (isPattern) {
         Text(stringResource(label), modifier = Modifier.padding(bottom = 16.dp))
         var drawn by remember { mutableStateOf<List<Int>>(emptyList()) }
-        PatternLockView(onPatternComplete = { drawn = it })
-        error?.let { Text(stringResource(R.string.pattern_mismatch), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
-        Button(
-            onClick = { if (drawn.size >= 4) onConfirm(drawn.joinToString(",")) },
-            modifier = Modifier.padding(top = 16.dp),
-        ) { Text(stringResource(R.string.confirm)) }
+        PatternLockView(
+            resetKey = resetKey,
+            onPatternComplete = { drawn = it },
+        )
+        error?.let {
+            Text(
+                stringResource(R.string.pattern_not_match),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        if (drawn.size >= 4) {
+            Button(
+                onClick = { onConfirm(drawn.joinToString(",")) },
+                modifier = Modifier.padding(top = 16.dp),
+            ) { Text(stringResource(R.string.confirm)) }
+        }
     } else {
         var value by remember { mutableStateOf("") }
         OutlinedTextField(
@@ -193,11 +234,19 @@ private fun ConfirmPassword(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        error?.let { Text(stringResource(R.string.pin_mismatch), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
-        Button(
-            onClick = { if (value.length == 6) onConfirm(value) },
-            modifier = Modifier.padding(top = 16.dp),
-        ) { Text(stringResource(R.string.confirm)) }
+        error?.let {
+            Text(
+                stringResource(R.string.pin_not_match),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        if (value.length == 6) {
+            Button(
+                onClick = { onConfirm(value) },
+                modifier = Modifier.padding(top = 16.dp),
+            ) { Text(stringResource(R.string.confirm)) }
+        }
     }
 }
 

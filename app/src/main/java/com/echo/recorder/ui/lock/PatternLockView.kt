@@ -29,18 +29,23 @@ import kotlin.math.hypot
  * 3 4 5
  * 6 7 8
  *
- * 通过 [onPatternComplete] 回调完整点序. 最少连接 4 个点才视为有效.
+ * 交互: 手指按下并拖拽经过点时实时选中并连线, 抬起时通过 [onPatternComplete] 回调完整点序.
+ * 最少连接 4 个点才视为有效.
+ *
+ * @param resetKey 递增此值可重置图案显示 (由父组件控制).
+ * @param PatternLockView 使用 [resetKey] 重置时, 下一次手势会重新开始.
  */
 @Composable
 fun PatternLockView(
     modifier: Modifier = Modifier,
     size: Dp = 280.dp,
+    resetKey: Int = 0,
     onPatternComplete: (List<Int>) -> Unit,
 ) {
     val dotColor = Color(0xFF3F51B5)
     val lineColor = Color(0xFF3F51B5)
-    var pattern by remember { mutableStateOf(listOf<Int>()) }
-    var current by remember { mutableStateOf<Offset?>(null) }
+    var pattern by remember(resetKey) { mutableStateOf(listOf<Int>()) }
+    var current by remember(resetKey) { mutableStateOf<Offset?>(null) }
     val density = LocalDensity.current
 
     Box(
@@ -50,7 +55,7 @@ fun PatternLockView(
         Canvas(
             modifier = Modifier
                 .size(size)
-                .pointerInput(Unit) {
+                .pointerInput(resetKey) {
                     detectDragGestures(
                         onDragStart = { offset ->
                             hitTest(offset, size, density)?.let {
@@ -106,7 +111,7 @@ fun PatternLockView(
                     )
                 }
             }
-            // 手指到当前点的线.
+            // 手指到当前点的动态线.
             val last = current
             if (last != null && pattern.isNotEmpty()) {
                 drawLine(

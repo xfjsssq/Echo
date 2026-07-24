@@ -45,6 +45,8 @@ import com.echo.recorder.settings.BufferDuration
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.settings.ThemeMode
 import com.echo.recorder.ui.lock.PasswordPromptDialog
+import com.echo.recorder.ui.lock.ChangePasswordDialog
+import com.echo.recorder.ui.lock.ResetRecoveryKeyDialog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -60,6 +62,7 @@ fun SettingsScreen(
     onOpenPasswordSetup: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
     onOpenPublicDir: () -> Unit = {},
+    onChangePassword: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val repo = remember { SettingsRepository(context) }
@@ -89,6 +92,9 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     // 公共目录开关密码验证.
     var verifyPublicDir by remember { mutableStateOf(false) }
+    // 修改密码 / 重置恢复密钥.
+    var showChangePassword by remember { mutableStateOf(false) }
+    var showResetRecoveryKey by remember { mutableStateOf(false) }
 
     val storedHash by produceState<String?>(initialValue = null) {
         value = repo.passwordHash.first()
@@ -244,6 +250,24 @@ fun SettingsScreen(
         )
     }
 
+    // 修改密码.
+    if (showChangePassword) {
+        ChangePasswordDialog(
+            onDismiss = { showChangePassword = false },
+            onVerified = {
+                showChangePassword = false
+                onChangePassword()
+            },
+        )
+    }
+
+    // 重置恢复密钥.
+    if (showResetRecoveryKey) {
+        ResetRecoveryKeyDialog(
+            onDismiss = { showResetRecoveryKey = false },
+        )
+    }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.settings)) }) },
     ) { padding ->
@@ -298,8 +322,14 @@ fun SettingsScreen(
                     }
                 },
             )
-            Preference(title = stringResource(R.string.change_password), subtitle = stringResource(R.string.coming_soon), enabled = false) {}
-            Preference(title = stringResource(R.string.view_recovery_key), subtitle = stringResource(R.string.coming_soon), enabled = false) {}
+            Preference(
+                title = stringResource(R.string.change_password),
+                subtitle = stringResource(R.string.change_password_by_password),
+            ) { showChangePassword = true }
+            Preference(
+                title = stringResource(R.string.reset_recovery_key_title),
+                subtitle = stringResource(R.string.reset_recovery_key_subtitle),
+            ) { showResetRecoveryKey = true }
 
             // ---- 存储设置 ----
             GroupTitle(stringResource(R.string.group_storage))

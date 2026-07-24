@@ -109,7 +109,7 @@
     <string name="pattern_mismatch">两次绘制的图案不一致</string>
     <string name="pattern_too_short">至少连接 4 个点</string>
     <string name="recovery_key_title">恢复密钥</string>
-    <string name="recovery_key_warning">注意: 这是恢复密钥, 不是重复输入密码。忘记密码时用它重置。请妥善保管, Echo 无法找回。</string>
+    <string name="recovery_key_warning">⚠️ 这是你的恢复密钥。忘记密码时用它重置。请截图或记在备忘录中。Echo 无法找回。此密钥仅展示一次。</string>
     <string name="recovery_key_label">您的恢复密钥: %1$s</string>
     <string name="set_password">设置密码</string>
     <string name="input_password">输入密码</string>
@@ -118,6 +118,21 @@
     <string name="forgot_password">忘记密码?</string>
     <string name="reset_password_with_recovery">使用恢复密钥重置密码</string>
     <string name="lock_screen_subtitle">请输入密码进入小E</string>
+    <string name="pattern_first_drawn">图案已记录, 点击确认后再次绘制</string>
+    <string name="pattern_not_match">图案不一致, 请重新设置</string>
+    <string name="pin_not_match">两次密码不一致, 请重新设置</string>
+    <string name="lockout_countdown">尝试次数过多, 请 %1$d 秒后再试</string>
+    <string name="change_password_by_password">通过密码修改</string>
+    <string name="change_password_by_recovery">通过恢复密钥修改</string>
+    <string name="change_password_title">修改密码</string>
+    <string name="verify_current_password">验证当前密码</string>
+    <string name="verify_current_recovery">验证当前恢复密钥</string>
+    <string name="reset_recovery_key_title">重置恢复密钥</string>
+    <string name="reset_recovery_key_subtitle">验证旧密钥后生成新密钥</string>
+    <string name="new_recovery_key_title">新恢复密钥</string>
+    <string name="change_password_success">密码修改成功</string>
+    <string name="reset_recovery_key_success">恢复密钥已重置</string>
+    <string name="view_recovery_key_subtitle">验证密码后查看</string>
 
     <!-- 公共目录 -->
     <string name="public_dir_enable_title">开启公共目录备份?</string>

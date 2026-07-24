@@ -109,7 +109,7 @@
     <string name="pattern_mismatch">The two patterns do not match</string>
     <string name="pattern_too_short">Connect at least 4 dots</string>
     <string name="recovery_key_title">Recovery key</string>
-    <string name="recovery_key_warning">Note: this is the recovery key, not the password again. Use it to reset your password if forgotten. Keep it safe — Echo cannot recover it.</string>
+    <string name="recovery_key_warning">⚠️ This is your recovery key. Use it to reset your password if forgotten. Screenshot or save it in your notes. Echo cannot recover it. This key is shown only once.</string>
     <string name="recovery_key_label">Your recovery key: %1$s</string>
     <string name="set_password">Set password</string>
     <string name="input_password">Enter password</string>
@@ -118,6 +118,21 @@
     <string name="forgot_password">Forgot password?</string>
     <string name="reset_password_with_recovery">Reset with recovery key</string>
     <string name="lock_screen_subtitle">Enter your password to open Echo</string>
+    <string name="pattern_first_drawn">Pattern recorded — tap confirm, then draw again</string>
+    <string name="pattern_not_match">Patterns do not match — please start over</string>
+    <string name="pin_not_match">PINs do not match — please start over</string>
+    <string name="lockout_countdown">Too many attempts — try again in %1$d seconds</string>
+    <string name="change_password_by_password">Change via password</string>
+    <string name="change_password_by_recovery">Change via recovery key</string>
+    <string name="change_password_title">Change password</string>
+    <string name="verify_current_password">Verify current password</string>
+    <string name="verify_current_recovery">Verify current recovery key</string>
+    <string name="reset_recovery_key_title">Reset recovery key</string>
+    <string name="reset_recovery_key_subtitle">Verify old key, then generate a new one</string>
+    <string name="new_recovery_key_title">New recovery key</string>
+    <string name="change_password_success">Password changed</string>
+    <string name="reset_recovery_key_success">Recovery key reset</string>
+    <string name="view_recovery_key_subtitle">Verify password to view</string>
 
     <!-- Public directory -->
     <string name="public_dir_enable_title">Enable public directory backup?</string>
