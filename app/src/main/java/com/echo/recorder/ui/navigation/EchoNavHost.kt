@@ -11,6 +11,7 @@ import com.echo.recorder.ui.list.ListScreen
 import com.echo.recorder.ui.list.ListViewModel
 import com.echo.recorder.ui.list.PublicDirManagementScreen
 import com.echo.recorder.ui.lock.PasswordSetupScreen
+import com.echo.recorder.ui.onboarding.OnboardingScreen
 import com.echo.recorder.ui.settings.SettingsScreen
 import com.echo.recorder.ui.record.RecordScreen
 import com.echo.recorder.ui.record.RecordViewModel
@@ -55,6 +56,12 @@ fun EchoNavHost(
                 onOpenPasswordSetup = { navController.navigate(EchoRoutes.PASSWORD_SETUP) },
                 onOpenAbout = { navController.navigate(EchoRoutes.ABOUT) },
                 onOpenPublicDir = { navController.navigate(EchoRoutes.PUBLIC_DIR) },
+                onChangePassword = { navController.navigate(EchoRoutes.PASSWORD_SETUP) },
+            )
+        }
+        composable(EchoRoutes.ONBOARDING) {
+            OnboardingScreen(
+                onFinish = { navController.popBackStack() },
             )
         }
         composable(EchoRoutes.PASSWORD_SETUP) {

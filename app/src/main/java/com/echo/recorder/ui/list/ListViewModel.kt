@@ -57,7 +57,7 @@ class ListViewModel(
     }
 
     fun switchTab(tab: ListTab) {
-        _state.value = _state.value.copy(tab = tab, expandedId = null)
+        _state.value = _state.value.copy(tab = tab, expandedId = null, selected = emptySet())
     }
 
     // ---- 展开 (原地播放) ----

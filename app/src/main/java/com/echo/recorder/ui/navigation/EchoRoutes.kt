@@ -8,4 +8,5 @@ object EchoRoutes {
     const val PASSWORD_SETUP = "password_setup"
     const val PUBLIC_DIR = "public_dir"
     const val ABOUT = "about"
+    const val ONBOARDING = "onboarding"
 }

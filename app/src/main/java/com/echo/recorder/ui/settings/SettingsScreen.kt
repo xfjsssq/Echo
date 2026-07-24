@@ -63,6 +63,7 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit = {},
     onOpenPublicDir: () -> Unit = {},
     onChangePassword: () -> Unit = {},
+    onOpenOnboarding: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val repo = remember { SettingsRepository(context) }
@@ -95,6 +96,8 @@ fun SettingsScreen(
     // 修改密码 / 重置恢复密钥.
     var showChangePassword by remember { mutableStateOf(false) }
     var showResetRecoveryKey by remember { mutableStateOf(false) }
+    // 隐私政策.
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
 
     val storedHash by produceState<String?>(initialValue = null) {
         value = repo.passwordHash.first()
@@ -169,6 +172,8 @@ fun SettingsScreen(
                                         themeMode = mode
                                         scope.launch { repo.setThemeMode(mode) }
                                         showThemeDialog = false
+                                        // 主题切换独立重建 Activity, 不影响语言.
+                                        (context as? android.app.Activity)?.let { LocaleManager.recreate(it) }
                                     },
                                     role = Role.RadioButton,
                                 )
@@ -268,6 +273,26 @@ fun SettingsScreen(
         )
     }
 
+    // 隐私政策.
+    if (showPrivacyPolicy) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyPolicy = false },
+            title = { Text(stringResource(R.string.privacy_policy)) },
+            text = {
+                androidx.compose.foundation.rememberScrollState().let { scrollState ->
+                    Text(
+                        text = stringResource(R.string.privacy_text),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.verticalScroll(scrollState),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPrivacyPolicy = false }) { Text(stringResource(R.string.close)) }
+            },
+        )
+    }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.settings)) }) },
     ) { padding ->
@@ -302,7 +327,6 @@ fun SettingsScreen(
             }
             Preference(
                 title = stringResource(R.string.privacy_mode),
-                subtitle = stringResource(R.string.coming_soon),
                 enabled = false,
             ) {}
 
@@ -367,8 +391,8 @@ fun SettingsScreen(
 
             // ---- 帮助与关于 ----
             GroupTitle(stringResource(R.string.group_help))
-            Preference(title = stringResource(R.string.how_to_use), subtitle = stringResource(R.string.coming_soon), enabled = false) {}
-            Preference(title = stringResource(R.string.privacy_policy), subtitle = stringResource(R.string.coming_soon), enabled = false) {}
+            Preference(title = stringResource(R.string.how_to_use)) { onOpenOnboarding() }
+            Preference(title = stringResource(R.string.privacy_policy)) { showPrivacyPolicy = true }
             Preference(title = stringResource(R.string.about)) { onOpenAbout() }
 
             Divider()

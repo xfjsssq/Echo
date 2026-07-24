@@ -625,14 +625,16 @@ private fun MiniPlayer(
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onSave) {
-                Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.move_to_longterm))
+            // 临时录音显示"移至长期", 长期录音显示"保存到公共目录" (虚引用除外).
+            if (rec.category.name == "TEMPORARY") {
+                IconButton(onClick = onSave) {
+                    Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.move_to_longterm))
+                }
             }
             IconButton(onClick = onShare) {
                 Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.share))
             }
-            // 虚引用 (公共目录) 文件不可再保存到公共目录.
-            if (!rec.isPublicVirtual) {
+            if (rec.category.name == "LONG_TERM" && !rec.isPublicVirtual) {
                 IconButton(onClick = onSaveToPublic) {
                     Icon(Icons.Filled.Save, contentDescription = stringResource(R.string.save_to_public))
                 }
