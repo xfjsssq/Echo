@@ -9,24 +9,35 @@ import java.util.Locale
  * 语言切换工具.
  *
  * 由于本应用为纯 ComponentActivity + Compose, 不使用 AppCompatActivity,
- * 故无法用 AppCompatDelegate.setApplicationLocales. 改为在 MainActivity.attachBaseContext
- * 中用保存的 locale 包装 Context, 切换语言后 recreate() 生效.
+ * 故无法用 AppCompatDelegate.setApplicationLocales.
+ *
+ * 关键实现: 通过 Activity.applyOverrideConfiguration(configuration) 把 locale 应用到
+ * Activity 自身的 resources, 这样 Compose 的 stringResource() 才能感知语言切换.
+ *
+ * 注意: createConfigurationContext() 包装的上下文无法传播到 Compose 的 stringResource(),
+ * 这是 Android 的已知限制, 必须走 applyOverrideConfiguration 路径.
  */
 object LocaleManager {
 
     const val ZH = "zh"
     const val EN = "en"
 
-    /** 用指定语言代码包装 Context. null 则跟随系统. */
+    /** 用指定语言代码包装 Context. 供服务等非 Compose 场景使用. */
     fun wrap(context: Context, language: String?): Context {
-        val locale = when (language) {
-            EN -> Locale.ENGLISH
-            else -> Locale.CHINESE
-        }
+        val locale = localeOf(language)
         Locale.setDefault(locale)
         val config = Configuration(context.resources.configuration)
         config.setLocale(locale)
         return context.createConfigurationContext(config)
+    }
+
+    /** 创建应用了目标语言的 Configuration, 供 Activity.applyOverrideConfiguration 使用. */
+    fun configuration(context: Context, language: String?): Configuration {
+        val locale = localeOf(language)
+        Locale.setDefault(locale)
+        val config = Configuration(context.resources.configuration)
+        config.setLocale(locale)
+        return config
     }
 
     /** 当前生效的语言代码. */
@@ -39,5 +50,10 @@ object LocaleManager {
     fun recreate(activity: Activity) {
         activity.recreate()
         activity.overridePendingTransition(0, 0)
+    }
+
+    private fun localeOf(language: String?): Locale = when (language) {
+        EN -> Locale.ENGLISH
+        else -> Locale.CHINESE
     }
 }

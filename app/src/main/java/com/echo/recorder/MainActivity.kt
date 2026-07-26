@@ -3,6 +3,7 @@ package com.echo.recorder
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -42,12 +43,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 用保存的语言包装 Context (语言切换在 attachBaseContext 生效). */
-    override fun attachBaseContext(newBase: Context) {
+    /**
+     * 应用目标语言到 Activity 自身的 resources.
+     *
+     * 这是 Compose stringResource() 感知语言切换的关键: 必须通过 applyOverrideConfiguration
+     * 把 locale 应用到 Activity 的 resources, 而非 createConfigurationContext (后者无法传播到 Compose).
+     */
+    override fun applyOverrideConfiguration(overrideConfiguration: Configuration?) {
         val language = runBlocking {
-            runCatching { SettingsRepository(newBase).language.first() }.getOrNull()
+            runCatching { SettingsRepository(this@MainActivity).language.first() }.getOrNull()
         }
-        super.attachBaseContext(LocaleManager.wrap(newBase, language))
+        val config = LocaleManager.configuration(this, language)
+        // 保留系统原始配置的其他字段 (屏幕方向/DPI 等), 仅覆盖 locale.
+        if (overrideConfiguration != null) {
+            config.setTo(overrideConfiguration)
+            val locale = if (language == LocaleManager.EN) java.util.Locale.ENGLISH else java.util.Locale.CHINESE
+            config.setLocale(locale)
+        }
+        super.applyOverrideConfiguration(config)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

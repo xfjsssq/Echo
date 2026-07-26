@@ -97,14 +97,17 @@ fun EchoApp(
         }
         when (step) {
             0 -> LanguagePickerScreen(onPick = { code ->
-                scope.launch { settings.setLanguage(code) }
-                // 重建 Activity 以应用新语言; 重建后 step 恢复为 0,
-                // 但此时语言已是目标语言, 用户再次选择会再重建.
-                // 为避免无限重建, 语言选完后直接跳到隐私协议.
-                step = 1
-                val activity = context as? android.app.Activity
-                if (activity != null && !activity.isFinishing) {
-                    LocaleManager.recreate(activity)
+                // 先等待 DataStore 写入完成, 再重建 Activity, 确保新 Activity 读到新语言.
+                scope.launch {
+                    settings.setLanguage(code)
+                    // 重建 Activity 以应用新语言; 重建后 step 恢复为 0,
+                    // 但此时语言已是目标语言, 用户再次选择会再重建.
+                    // 为避免无限重建, 语言选完后直接跳到隐私协议.
+                    step = 1
+                    val activity = context as? android.app.Activity
+                    if (activity != null && !activity.isFinishing) {
+                        LocaleManager.recreate(activity)
+                    }
                 }
             })
             1 -> PrivacyAgreementScreen(onAgree = { step = 2 })

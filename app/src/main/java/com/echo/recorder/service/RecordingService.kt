@@ -19,6 +19,7 @@ import com.echo.recorder.common.pendingDir
 import com.echo.recorder.common.unprocessedDir
 import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.domain.recording.RecordingRepository
+import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -119,11 +120,19 @@ class RecordingService : Service() {
         observeLanguage()
     }
 
-    /** 监听 DataStore 语言设置, 变化时重建通知. */
+    /** 包装了当前语言设置的 Context, 用于读取本地化字符串. */
+    private var localizedContext: Context = this
+
+    /** 读取本地化字符串 (跟随 DataStore 语言设置). */
+    private fun str(resId: Int): String = localizedContext.getString(resId)
+
+    /** 监听 DataStore 语言设置, 变化时更新本地化 Context 并重建通知. */
     private fun observeLanguage() {
         languageJob?.cancel()
         languageJob = scope.launch {
-            SettingsRepository(this@RecordingService).language.collect {
+            SettingsRepository(this@RecordingService).language.collect { language ->
+                // 重建本地化 Context, 使后续 getString 读取目标语言.
+                localizedContext = LocaleManager.wrap(this@RecordingService, language)
                 // 语言切换后重建通知, 使文案立即切换.
                 rebuildNotification()
             }
@@ -280,9 +289,9 @@ class RecordingService : Service() {
 
     private fun rebuildNotification() {
         val text = when {
-            _saving.value -> getString(R.string.notification_saving)
-            _phase.value == Phase.IDLE -> getString(R.string.notify_idle_text)
-            _phase.value == Phase.REVIEW -> getString(R.string.notification_review_title)
+            _saving.value -> str(R.string.notification_saving)
+            _phase.value == Phase.IDLE -> str(R.string.notify_idle_text)
+            _phase.value == Phase.REVIEW -> str(R.string.notification_review_title)
             else -> lastRotatedText
         }
         startForeground(NOTIFICATION_ID, buildNotification(text))
@@ -292,7 +301,7 @@ class RecordingService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, getString(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, str(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
             val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             mgr.createNotificationChannel(channel)
         }
@@ -327,12 +336,12 @@ class RecordingService : Service() {
      */
     private fun buildNotification(text: String = ""): Notification {
         val pendingFlag = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val title = getString(R.string.app_name)
+        val title = str(R.string.app_name)
         val contentText: String
         when {
-            _saving.value -> contentText = getString(R.string.notification_saving)
-            _phase.value == Phase.IDLE -> contentText = getString(R.string.notify_idle_text)
-            _phase.value == Phase.REVIEW -> contentText = getString(R.string.notification_review_title)
+            _saving.value -> contentText = str(R.string.notification_saving)
+            _phase.value == Phase.IDLE -> contentText = str(R.string.notify_idle_text)
+            _phase.value == Phase.REVIEW -> contentText = str(R.string.notification_review_title)
             else -> contentText = if (text.isNotEmpty()) text else randomBufferingText()
         }
 
@@ -349,7 +358,7 @@ class RecordingService : Service() {
             Phase.BUFFERING -> if (!_saving.value) {
                 builder.addAction(
                     android.R.drawable.ic_media_pause,
-                    getString(R.string.notification_pause),
+                    str(R.string.notification_pause),
                     pendingIntent(ACTION_PAUSE, pendingFlag),
                 )
             }
@@ -357,12 +366,12 @@ class RecordingService : Service() {
             Phase.REVIEW -> {
                 builder.addAction(
                     android.R.drawable.ic_menu_save,
-                    getString(R.string.notification_save),
+                    str(R.string.notification_save),
                     pendingIntent(ACTION_SAVE, pendingFlag),
                 )
                 builder.addAction(
                     android.R.drawable.ic_menu_delete,
-                    getString(R.string.notification_delete),
+                    str(R.string.notification_delete),
                     pendingIntent(ACTION_DELETE, pendingFlag),
                 )
             }

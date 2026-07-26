@@ -215,10 +215,12 @@ fun SettingsScreen(
                                 .selectable(
                                     selected = current == code,
                                     onClick = {
-                                        language = code
-                                        scope.launch { repo.setLanguage(code) }
                                         showLanguageDialog = false
-                                        (context as? android.app.Activity)?.let { LocaleManager.recreate(it) }
+                                        // 先等待 DataStore 写入完成, 再重建 Activity, 确保新 Activity 读到新语言.
+                                        scope.launch {
+                                            repo.setLanguage(code)
+                                            (context as? android.app.Activity)?.let { LocaleManager.recreate(it) }
+                                        }
                                     },
                                     role = Role.RadioButton,
                                 )
