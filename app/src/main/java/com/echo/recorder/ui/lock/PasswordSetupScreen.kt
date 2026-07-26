@@ -3,10 +3,11 @@ package com.echo.recorder.ui.lock
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -15,7 +16,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -30,10 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
+import com.echo.recorder.auth.PasswordVerifier
 import com.echo.recorder.settings.PasswordCrypto
 import com.echo.recorder.settings.SettingsRepository
 import kotlinx.coroutines.launch
@@ -60,7 +59,7 @@ fun PasswordSetupScreen(
     var isPattern by remember { mutableStateOf(false) }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf(false) }
     var recoveryKey by remember { mutableStateOf<String?>(null) }
     // 图案重置 key, 用于清空 PatternLockView.
     var patternResetKey by remember { mutableIntStateOf(0) }
@@ -70,7 +69,7 @@ fun PasswordSetupScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.password_settings)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "back") }
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                 },
             )
         },
@@ -85,14 +84,14 @@ fun PasswordSetupScreen(
         ) {
             when (step) {
                 0 -> TypeSelect(
-                    onPickPin = { isPattern = false; step = 1 },
-                    onPickPattern = { isPattern = true; step = 1 },
+                    onPickPin = { isPattern = false; step = 1; error = false },
+                    onPickPattern = { isPattern = true; step = 1; error = false },
                 )
                 1 -> FirstEnter(
                     isPattern = isPattern,
                     label = if (isPattern) R.string.pattern_input_hint else R.string.pin_input_hint,
                     resetKey = patternResetKey,
-                    onDrawn = { first = it; error = null; step = 2 },
+                    onDrawn = { first = it; error = false; step = 2 },
                 )
                 2 -> SecondEnter(
                     isPattern = isPattern,
@@ -100,7 +99,7 @@ fun PasswordSetupScreen(
                     label = if (isPattern) R.string.pattern_confirm_hint else R.string.pin_confirm_hint,
                     resetKey = patternResetKey,
                     error = error,
-                    onConfirm = { second = it; error = null
+                    onConfirm = { second = it
                         if (second == first) {
                             // 生成恢复密钥并存储.
                             val key = PasswordCrypto.generateRecoveryKey()
@@ -116,7 +115,7 @@ fun PasswordSetupScreen(
                             step = 3
                         } else {
                             // 不一致: 回到第一次输入.
-                            error = if (isPattern) "pattern_not_match" else "pin_not_match"
+                            error = true
                             first = ""; second = ""
                             patternResetKey++
                             step = 1
@@ -156,7 +155,8 @@ private fun FirstEnter(
     onDrawn: (String) -> Unit,
 ) {
     if (isPattern) {
-        Text(stringResource(label), modifier = Modifier.padding(bottom = 16.dp))
+        Text(stringResource(label))
+        Spacer(Modifier.height(16.dp))
         var drawn by remember { mutableStateOf<List<Int>>(emptyList()) }
         PatternLockView(
             resetKey = resetKey,
@@ -167,30 +167,16 @@ private fun FirstEnter(
             Text(
                 stringResource(R.string.pattern_first_drawn),
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 12.dp),
             )
+            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = { onDrawn(drawn.joinToString(",")) },
-                modifier = Modifier.padding(top = 8.dp),
             ) { Text(stringResource(R.string.confirm)) }
         }
     } else {
-        var value by remember { mutableStateOf("") }
-        OutlinedTextField(
-            value = value,
-            onValueChange = { value = it.filter { c -> c.isDigit() }.take(6) },
-            label = { Text(stringResource(label)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+        PinInput(
+            onComplete = { onDrawn(it) },
         )
-        if (value.length == 6) {
-            Button(
-                onClick = { onDrawn(value) },
-                modifier = Modifier.padding(top = 16.dp),
-            ) { Text(stringResource(R.string.confirm)) }
-        }
     }
 }
 
@@ -200,52 +186,43 @@ private fun SecondEnter(
     first: String,
     label: Int,
     resetKey: Int,
-    error: String?,
+    error: Boolean,
     onConfirm: (String) -> Unit,
 ) {
     if (isPattern) {
-        Text(stringResource(label), modifier = Modifier.padding(bottom = 16.dp))
+        Text(stringResource(label))
+        Spacer(Modifier.height(16.dp))
         var drawn by remember { mutableStateOf<List<Int>>(emptyList()) }
         PatternLockView(
             resetKey = resetKey,
             onPatternComplete = { drawn = it },
         )
-        error?.let {
+        if (error) {
             Text(
                 stringResource(R.string.pattern_not_match),
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 8.dp),
             )
         }
         if (drawn.size >= 4) {
             Button(
                 onClick = { onConfirm(drawn.joinToString(",")) },
-                modifier = Modifier.padding(top = 16.dp),
             ) { Text(stringResource(R.string.confirm)) }
         }
     } else {
         var value by remember { mutableStateOf("") }
-        OutlinedTextField(
+        OutlinedTextFieldPin(
             value = value,
-            onValueChange = { value = it.filter { c -> c.isDigit() }.take(6) },
-            label = { Text(stringResource(label)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            onValueChange = {
+                value = it
+                if (it.length == 6) onConfirm(it)
+            },
+            label = stringResource(label),
         )
-        error?.let {
+        if (error) {
             Text(
                 stringResource(R.string.pin_not_match),
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 8.dp),
             )
-        }
-        if (value.length == 6) {
-            Button(
-                onClick = { onConfirm(value) },
-                modifier = Modifier.padding(top = 16.dp),
-            ) { Text(stringResource(R.string.confirm)) }
         }
     }
 }
@@ -253,16 +230,17 @@ private fun SecondEnter(
 @Composable
 private fun RecoveryKeyShow(key: String, onFinish: () -> Unit) {
     Text(stringResource(R.string.recovery_key_title), style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(16.dp))
     Text(
         stringResource(R.string.recovery_key_warning),
         color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(vertical = 16.dp),
     )
+    Spacer(Modifier.height(16.dp))
     Text(
         stringResource(R.string.recovery_key_label, key),
         style = MaterialTheme.typography.headlineSmall,
-        modifier = Modifier.padding(bottom = 24.dp),
     )
+    Spacer(Modifier.height(24.dp))
     Button(onClick = onFinish, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.confirm))
     }

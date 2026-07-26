@@ -2,6 +2,8 @@
     <string name="app_name">Echo</string>
 
     <!-- 通用 -->
+    <string name="lock">锁定</string>
+    <string name="unlock">解锁</string>
     <string name="confirm">确认</string>
     <string name="cancel">取消</string>
     <string name="close">关闭</string>
@@ -172,6 +174,8 @@
     <string name="recovery_key_title">恢复密钥</string>
     <string name="recovery_key_warning">⚠️ 这是你的恢复密钥。忘记密码时用它重置。请截图或记在备忘录中。Echo 无法找回。此密钥仅展示一次。</string>
     <string name="recovery_key_label">您的恢复密钥: %1$s</string>
+    <string name="recovery_key_view_only_once">恢复密钥仅在设置时展示一次, 请备忘保存</string>
+    <string name="recovery_key_view_note">恢复密钥用于忘记密码时重置密码. 请妥善保管.</string>
     <string name="set_password">设置密码</string>
     <string name="input_password">输入密码</string>
     <string name="password_wrong">密码错误</string>

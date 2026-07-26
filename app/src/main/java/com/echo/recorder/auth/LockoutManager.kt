@@ -1,5 +1,9 @@
 package com.echo.recorder.auth
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+
 /**
  * 密码/恢复密钥错误次数统计与锁定管理 (进程内单例).
  *
@@ -27,6 +31,14 @@ object LockoutManager {
 
     /** 当前是否处于锁定状态. */
     fun isLocked(): Boolean = remainingSeconds() > 0
+
+    /** 剩余锁定秒数流, 每秒自动更新. */
+    fun remainingSecondsFlow(): Flow<Int> = flow {
+        while (true) {
+            emit(remainingSeconds().toInt())
+            delay(1000)
+        }
+    }
 
     /** 记录一次失败, 并根据累计次数触发锁定. */
     fun recordFailure(): Long {

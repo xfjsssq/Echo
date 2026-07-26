@@ -135,10 +135,27 @@ fun EchoApp(
         if (step < 3) return
     }
 
-    // 冷启动锁屏: 开启密码且本会话未解锁时, 全屏覆盖锁屏层.
+    // 冷启动 + 主动锁定统一锁屏入口.
+    // 条件: 密码已启用 且 (冷启动未解锁 或 主动锁定).
     if (passwordEnabled && !SessionAuth.isUnlocked) {
+        val storedHash by produceState<String?>(initialValue = null) {
+            value = settings.passwordHash.first()
+        }
+        val recoveryHash by produceState<String?>(initialValue = null) {
+            value = settings.recoveryHash.first()
+        }
+        val isPattern by produceState(initialValue = false) {
+            value = settings.passwordType.first() == "pattern"
+        }
         Surface(modifier = Modifier.fillMaxSize()) {
-            LockScreen(onUnlocked = { /* SessionAuth.isUnlocked 已在 LockScreen 内置位 */ })
+            LockScreen(
+                storedHash = storedHash,
+                recoveryHash = recoveryHash,
+                isPattern = isPattern,
+                onUnlocked = {
+                    SessionAuth.isUnlocked = true
+                },
+            )
         }
         return
     }
@@ -148,13 +165,16 @@ fun EchoApp(
         val storedHash by produceState<String?>(initialValue = null) {
             value = settings.passwordHash.first()
         }
+        val recoveryHash by produceState<String?>(initialValue = null) {
+            value = settings.recoveryHash.first()
+        }
         val passwordType by produceState<String?>(initialValue = null) {
             value = settings.passwordType.first()
         }
         val isPattern = passwordType == "pattern"
         PasswordPromptDialog(
             storedHash = storedHash,
-            recoveryHash = null,
+            recoveryHash = recoveryHash,
             isPattern = isPattern,
             onVerify = {
                 askExitPassword = false
@@ -225,12 +245,19 @@ fun EchoApp(
         else { viewModel.exitCompletely(); onExit() }
     }
 
+    // 用户点击锁定按钮: 触发锁屏.
+    val onLock: () -> Unit = {
+        SessionAuth.lock()
+    }
+
     EchoNavHost(
         navController = navController,
         recordViewModel = viewModel,
         onRequestPermission = onRequestPermission,
         onRestartService = onRestartService,
         onRequestExit = onRequestExit,
+        onLock = onLock,
+        passwordEnabled = passwordEnabled,
         themeMode = themeMode,
         onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
     )

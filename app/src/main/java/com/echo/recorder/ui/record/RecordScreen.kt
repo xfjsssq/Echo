@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Settings
@@ -61,6 +63,8 @@ fun RecordScreen(
     onOpenList: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onExit: () -> Unit = {},
+    onLock: () -> Unit = {},
+    passwordEnabled: Boolean = false,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -86,6 +90,12 @@ fun RecordScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    // 锁定按钮 (仅当密码已启用时显示).
+                    if (passwordEnabled) {
+                        IconButton(onClick = onLock) {
+                            Icon(Icons.Filled.Lock, contentDescription = stringResource(R.string.lock))
+                        }
+                    }
                     IconButton(onClick = onOpenList) {
                         Icon(Icons.Filled.List, contentDescription = stringResource(R.string.record_list))
                     }

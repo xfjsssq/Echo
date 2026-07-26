@@ -28,6 +28,8 @@ fun EchoNavHost(
     onRequestPermission: () -> Unit,
     onRestartService: (savePending: Boolean) -> Unit,
     onRequestExit: () -> Unit,
+    onLock: () -> Unit = {},
+    passwordEnabled: Boolean = false,
     themeMode: ThemeMode = ThemeMode.LIGHT,
     onThemeChange: (ThemeMode) -> Unit = {},
 ) {
@@ -45,6 +47,8 @@ fun EchoNavHost(
                 onOpenList = { navController.navigate(EchoRoutes.LIST) },
                 onOpenSettings = { navController.navigate(EchoRoutes.SETTINGS) },
                 onExit = onRequestExit,
+                onLock = onLock,
+                passwordEnabled = passwordEnabled,
             )
         }
         composable(EchoRoutes.LIST) {

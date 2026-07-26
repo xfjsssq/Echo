@@ -46,6 +46,7 @@ import com.echo.recorder.settings.BufferDuration
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.lock.PasswordPromptDialog
+import com.echo.recorder.ui.lock.ViewRecoveryKeyDialog
 import com.echo.recorder.ui.lock.ChangePasswordDialog
 import com.echo.recorder.ui.lock.ResetRecoveryKeyDialog
 import kotlinx.coroutines.flow.first
@@ -94,14 +95,19 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     // 公共目录开关密码验证.
     var verifyPublicDir by remember { mutableStateOf(false) }
-    // 修改密码 / 重置恢复密钥.
+    // 修改密码 / 查看恢复密钥 / 重置恢复密钥 / 关闭密码验证.
     var showChangePassword by remember { mutableStateOf(false) }
+    var showViewRecoveryKey by remember { mutableStateOf(false) }
     var showResetRecoveryKey by remember { mutableStateOf(false) }
+    var verifyDisablePassword by remember { mutableStateOf(false) }
     // 隐私政策.
     var showPrivacyPolicy by remember { mutableStateOf(false) }
 
     val storedHash by produceState<String?>(initialValue = null) {
         value = repo.passwordHash.first()
+    }
+    val recoveryHash by produceState<String?>(initialValue = null) {
+        value = repo.recoveryHash.first()
     }
     val isPattern by produceState(initialValue = false) {
         value = repo.passwordType.first() == "pattern"
@@ -266,10 +272,36 @@ fun SettingsScreen(
         )
     }
 
+    // 查看恢复密钥 (需验证密码).
+    if (showViewRecoveryKey) {
+        ViewRecoveryKeyDialog(
+            onDismiss = { showViewRecoveryKey = false },
+        )
+    }
+
     // 重置恢复密钥.
     if (showResetRecoveryKey) {
         ResetRecoveryKeyDialog(
             onDismiss = { showResetRecoveryKey = false },
+        )
+    }
+
+    // 关闭密码验证.
+    if (verifyDisablePassword) {
+        PasswordPromptDialog(
+            storedHash = storedHash,
+            recoveryHash = recoveryHash,
+            isPattern = isPattern,
+            onVerify = {
+                verifyDisablePassword = false
+                passwordOn = false
+                scope.launch {
+                    repo.setPasswordEnabled(false)
+                    repo.setPassword(null)
+                    repo.setPasswordType(null)
+                }
+            },
+            onDismiss = { verifyDisablePassword = false },
         )
     }
 
@@ -349,7 +381,8 @@ fun SettingsScreen(
                         if (storedHash == null) onOpenPasswordSetup()
                         else { passwordOn = true; scope.launch { repo.setPasswordEnabled(true) } }
                     } else {
-                        passwordOn = false; scope.launch { repo.setPasswordEnabled(false) }
+                        // 关闭: 需验证密码.
+                        verifyDisablePassword = true
                     }
                 },
             )
@@ -357,6 +390,10 @@ fun SettingsScreen(
                 title = stringResource(R.string.change_password),
                 subtitle = stringResource(R.string.change_password_by_password),
             ) { showChangePassword = true }
+            Preference(
+                title = stringResource(R.string.view_recovery_key),
+                subtitle = stringResource(R.string.view_recovery_key_subtitle),
+            ) { showViewRecoveryKey = true }
             Preference(
                 title = stringResource(R.string.reset_recovery_key_title),
                 subtitle = stringResource(R.string.reset_recovery_key_subtitle),

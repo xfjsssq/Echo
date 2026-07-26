@@ -2,7 +2,9 @@ package com.echo.recorder.ui.lock
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -16,7 +18,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,7 +25,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
 import com.echo.recorder.auth.LockoutManager
-import com.echo.recorder.settings.PasswordCrypto
+import com.echo.recorder.auth.PasswordVerifier
 import kotlinx.coroutines.delay
 
 /**
@@ -46,14 +47,15 @@ fun PasswordPromptDialog(
 ) {
     // null 表示未设置密码 -> 直接放行.
     if (storedHash == null) {
-        onVerify()
+        LaunchedEffect(Unit) { onVerify() }
         return
     }
-    var error by remember { mutableStateOf<String?>(null) }
+
+    var error by remember { mutableStateOf(false) }
     var showRecovery by remember { mutableStateOf(false) }
     var recoveryInput by remember { mutableStateOf("") }
     // 锁定倒计时 (秒).
-    var lockSeconds by remember { mutableIntStateOf(0) }
+    var lockSeconds by remember { mutableIntStateOf(LockoutManager.remainingSeconds().toInt()) }
 
     // 启动时检查是否已锁定.
     LaunchedEffect(Unit) {
@@ -85,24 +87,27 @@ fun PasswordPromptDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = recoveryInput,
-                        onValueChange = { recoveryInput = it.filter { c -> c.isDigit() }.take(6); error = null },
+                        onValueChange = { recoveryInput = it.filter { c -> c.isDigit() }.take(6); error = false },
                         label = { Text(stringResource(R.string.recovery_key_title)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    error?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
+                    if (error) {
+                        Text(
+                            stringResource(R.string.recovery_key_wrong),
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (recoveryHash != null && PasswordCrypto.verify(recoveryInput, recoveryHash)) {
-                        LockoutManager.recordSuccess()
+                    if (PasswordVerifier.verifyRecovery(recoveryInput, recoveryHash) == PasswordVerifier.Result.Success) {
                         onVerify()
                     } else {
-                        error = "recovery_key_wrong"
-                        LockoutManager.recordFailure()
+                        error = true
                         lockSeconds = LockoutManager.remainingSeconds().toInt()
                     }
                 }) { Text(stringResource(R.string.confirm)) }
@@ -130,23 +135,24 @@ fun PasswordPromptDialog(
             onDismissRequest = onDismiss,
             title = { Text(stringResource(R.string.input_password)) },
             text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column {
                     PatternLockView(
                         resetKey = patternResetKey,
                         onPatternComplete = { p ->
-                            if (PasswordCrypto.verify(p.joinToString(","), storedHash)) {
-                                LockoutManager.recordSuccess()
-                                onVerify()
-                            } else {
-                                error = "password_wrong"
-                                pattern = emptyList()
-                                patternResetKey++
-                                LockoutManager.recordFailure()
-                                lockSeconds = LockoutManager.remainingSeconds().toInt()
+                            when (PasswordVerifier.verifyPassword(p.joinToString(","), storedHash)) {
+                                PasswordVerifier.Result.Success -> onVerify()
+                                PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
+                                PasswordVerifier.Result.Wrong -> {
+                                    error = true
+                                    pattern = emptyList()
+                                    patternResetKey++
+                                    lockSeconds = LockoutManager.remainingSeconds().toInt()
+                                }
+                                else -> { /* sealed 已穷尽 */ }
                             }
                         },
                     )
-                    error?.let {
+                    if (error) {
                         Text(
                             stringResource(R.string.password_wrong),
                             color = androidx.compose.material3.MaterialTheme.colorScheme.error,
@@ -172,14 +178,14 @@ fun PasswordPromptDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = input,
-                        onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); error = null },
+                        onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); error = false },
                         label = { Text(stringResource(R.string.pin_input_hint)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    error?.let {
+                    if (error) {
                         Text(
                             stringResource(R.string.password_wrong),
                             color = androidx.compose.material3.MaterialTheme.colorScheme.error,
@@ -192,13 +198,14 @@ fun PasswordPromptDialog(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (PasswordCrypto.verify(input, storedHash)) {
-                        LockoutManager.recordSuccess()
-                        onVerify()
-                    } else {
-                        error = "password_wrong"
-                        LockoutManager.recordFailure()
-                        lockSeconds = LockoutManager.remainingSeconds().toInt()
+                    when (PasswordVerifier.verifyPassword(input, storedHash)) {
+                        PasswordVerifier.Result.Success -> onVerify()
+                        PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
+                        PasswordVerifier.Result.Wrong -> {
+                            error = true
+                            lockSeconds = LockoutManager.remainingSeconds().toInt()
+                        }
+                        else -> { /* sealed 已穷尽 */ }
                     }
                 }) { Text(stringResource(R.string.confirm)) }
             },

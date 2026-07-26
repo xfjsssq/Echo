@@ -2,6 +2,8 @@
     <string name="app_name">Echo</string>
 
     <!-- Common -->
+    <string name="lock">Lock</string>
+    <string name="unlock">Unlock</string>
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
@@ -155,6 +157,8 @@
     <string name="recovery_key_title">Recovery key</string>
     <string name="recovery_key_warning">⚠️ This is your recovery key. Use it to reset your password if forgotten. Screenshot or save it in your notes. Echo cannot recover it. This key is shown only once.</string>
     <string name="recovery_key_label">Your recovery key: %1$s</string>
+    <string name="recovery_key_view_only_once">Recovery key is shown only once at setup, please save it</string>
+    <string name="recovery_key_view_note">Recovery key is used to reset your password if forgotten. Keep it safe.</string>
     <string name="set_password">Set password</string>
     <string name="input_password">Enter password</string>
     <string name="password_wrong">Wrong password</string>
