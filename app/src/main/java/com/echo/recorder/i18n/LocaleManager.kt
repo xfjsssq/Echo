@@ -35,8 +35,9 @@ object LocaleManager {
         else -> ZH
     }
 
-    /** 切换语言后重建 Activity 以生效. */
+    /** 切换语言后重建 Activity 以生效, 禁用切换动画防闪烁. */
     fun recreate(activity: Activity) {
         activity.recreate()
+        activity.overridePendingTransition(0, 0)
     }
 }

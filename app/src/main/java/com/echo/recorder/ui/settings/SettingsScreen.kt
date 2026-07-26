@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.echo.recorder.ui.theme.ThemeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -43,7 +44,7 @@ import com.echo.recorder.R
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.settings.BufferDuration
 import com.echo.recorder.settings.SettingsRepository
-import com.echo.recorder.settings.ThemeMode
+import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.lock.PasswordPromptDialog
 import com.echo.recorder.ui.lock.ChangePasswordDialog
 import com.echo.recorder.ui.lock.ResetRecoveryKeyDialog
@@ -64,6 +65,8 @@ fun SettingsScreen(
     onOpenPublicDir: () -> Unit = {},
     onChangePassword: () -> Unit = {},
     onOpenOnboarding: () -> Unit = {},
+    themeMode: ThemeMode = ThemeMode.LIGHT,
+    onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     val context = LocalContext.current
     val repo = remember { SettingsRepository(context) }
@@ -71,13 +74,11 @@ fun SettingsScreen(
 
     var selected by remember { mutableStateOf(BufferDuration.M3) }
     var passwordOn by remember { mutableStateOf(false) }
-    var themeMode by remember { mutableStateOf(ThemeMode.SYSTEM) }
     var language by remember { mutableStateOf<String?>(null) }
     var publicDirEnabled by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         selected = BufferDuration.values().firstOrNull { it.seconds == repo.bufferSeconds.first() } ?: BufferDuration.M3
         passwordOn = repo.passwordEnabled.first()
-        themeMode = repo.themeMode.first()
         language = repo.language.first()
         publicDirEnabled = repo.publicDirEnabled.first()
     }
@@ -169,11 +170,9 @@ fun SettingsScreen(
                                 .selectable(
                                     selected = themeMode == mode,
                                     onClick = {
-                                        themeMode = mode
-                                        scope.launch { repo.setThemeMode(mode) }
                                         showThemeDialog = false
-                                        // 主题切换独立重建 Activity, 不影响语言.
-                                        (context as? android.app.Activity)?.let { LocaleManager.recreate(it) }
+                                        // 主题切换: 仅更新 Compose 状态 + 持久化, 不重建 Activity.
+                                        onThemeChange(mode)
                                     },
                                     role = Role.RadioButton,
                                 )
@@ -186,7 +185,6 @@ fun SettingsScreen(
                                     when (mode) {
                                         ThemeMode.LIGHT -> R.string.theme_light
                                         ThemeMode.DARK -> R.string.theme_dark
-                                        ThemeMode.SYSTEM -> R.string.theme_system
                                     }
                                 ),
                                 modifier = Modifier.padding(start = 12.dp),
@@ -321,7 +319,14 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RadioButton(selected = displaySelected == dur, onClick = null)
-                        Text("${dur.label}  (${dur.estimatedMb})", modifier = Modifier.padding(start = 12.dp))
+                        Text(
+                            stringResource(
+                                R.string.buffer_duration_label,
+                                dur.label(context),
+                                dur.estimatedMb(context),
+                            ),
+                            modifier = Modifier.padding(start = 12.dp),
+                        )
                     }
                 }
             }
@@ -380,7 +385,6 @@ fun SettingsScreen(
                     when (themeMode) {
                         ThemeMode.LIGHT -> R.string.theme_light
                         ThemeMode.DARK -> R.string.theme_dark
-                        ThemeMode.SYSTEM -> R.string.theme_system
                     }
                 ),
             ) { showThemeDialog = true }

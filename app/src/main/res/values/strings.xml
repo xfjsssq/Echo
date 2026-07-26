@@ -73,7 +73,49 @@
     <string name="group_storage">存储设置</string>
     <string name="group_appearance">外观与语言</string>
     <string name="group_help">帮助与关于</string>
-    <string name="buffer_duration">缓冲时长</string>
+    <!-- 缓冲时长 (标签由代码拼字符串资源, 这里提供单位). -->
+    <string name="buffer_seconds_unit">秒</string>
+    <string name="buffer_minutes_unit">分钟</string>
+    <string name="buffer_duration_label">%1$s (%2$s)</string>
+
+    <!-- 通知栏 IDLE 状态文案. -->
+    <string name="notify_idle_text">小E随时等待您的指令</string>
+
+    <!-- 通知栏轮换文案 (BUFFERING 状态), 与 values-en 一一对应. -->
+    <string-array name="notify_texts_zh">
+        <item>嘘～小E正在认真聆听</item>
+        <item>小E的耳朵竖起来了，正在捕捉周围的声音</item>
+        <item>别担心，小E帮你记住每一句重要的话</item>
+        <item>正在缓冲中，按下暂停即可保存最近几分钟</item>
+        <item>小E默默守护你的每一次对话</item>
+        <item>所有音频只在本地，小E绝不上传</item>
+        <item>正在记录中，你可以随时取出刚刚说过的话</item>
+        <item>小声说，小E连听见风声都会帮你存下来哦</item>
+        <item>别让重要的话溜走，小E在听</item>
+        <item>录制不受干扰，你可以去做别的事</item>
+        <item>小E是个安静的小助手，只记录，不打扰</item>
+        <item>记得用通知栏按钮快速暂停和保存</item>
+        <item>安心去聊，回放的事交给小E</item>
+        <item>你永远可以信任小E的录音兜底能力</item>
+        <item>小E提醒你：录音需遵守当地法律哦</item>
+    </string-array>
+    <string-array name="notify_texts_en">
+        <item>Shh — Echo is listening carefully</item>
+        <item>Echo\'s ears are up, catching the sounds around you</item>
+        <item>Don\'t worry — Echo remembers every important word for you</item>
+        <item>Buffering — tap pause to save the last few minutes</item>
+        <item>Echo quietly guards every conversation of yours</item>
+        <item>All audio stays local — Echo never uploads anything</item>
+        <item>Recording — you can always pull out what was just said</item>
+        <item>Speak softly — Echo will even save the whisper of wind</item>
+        <item>Don\'t let important words slip away — Echo is listening</item>
+        <item>Recording without interruption — feel free to do other things</item>
+        <item>Echo is a quiet helper — it records, never disturbs</item>
+        <item>Use the notification buttons to pause and save quickly</item>
+        <item>Chat with peace of mind — leave the replay to Echo</item>
+        <item>You can always trust Echo\'s recording safety net</item>
+        <item>Echo reminds you: recording must comply with local laws</item>
+    </string-array>
     <string name="privacy_mode">隐私模式</string>
     <string name="password_protection">密码保护</string>
     <string name="change_password">修改密码</string>
@@ -89,7 +131,6 @@
     <!-- 主题 -->
     <string name="theme_light">明亮</string>
     <string name="theme_dark">黑暗</string>
-    <string name="theme_system">跟随系统</string>
 
     <!-- 语言 -->
     <string name="language_selection_title">请选择语言</string>

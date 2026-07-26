@@ -10,18 +10,30 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import com.echo.recorder.R
+import com.echo.recorder.ui.theme.ThemeMode
 
 /** 缓冲时长选项 (秒). */
-enum class BufferDuration(val seconds: Int, val label: String, val estimatedMb: String) {
-    S30(30, "30 秒", "约 0.3 MB"),
-    M1(60, "1 分钟", "约 0.6 MB"),
-    M3(180, "3 分钟", "约 2.1 MB"),
-    M5(300, "5 分钟", "约 3.5 MB"),
-    M10(600, "10 分钟", "约 7.0 MB"),
-}
+enum class BufferDuration(val seconds: Int) {
+    S30(30),
+    M1(60),
+    M3(180),
+    M5(300),
+    M10(600);
 
-/** 主题模式. */
-enum class ThemeMode { LIGHT, DARK, SYSTEM }
+    /** 本地化标签, 如 "30 秒" / "30s". */
+    fun label(context: Context): String = when (this) {
+        S30 -> "${seconds}${context.getString(R.string.buffer_seconds_unit)}"
+        else -> "${seconds / 60}${context.getString(R.string.buffer_minutes_unit)}"
+    }
+
+    /** 本地化预估大小, 如 "约 0.3 MB" / "~0.3 MB". */
+    fun estimatedMb(context: Context): String {
+        val mb = seconds * 30.0 / 1024.0
+        val approx = if (context.resources.configuration.locales.get(0)?.language == "en") "~" else "约"
+        return "$approx%.1f MB".format(mb)
+    }
+}
 
 val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "echo_settings")
 
@@ -65,7 +77,8 @@ class SettingsRepository(private val context: Context) {
         when (prefs[Keys.THEME_MODE]) {
             "LIGHT" -> ThemeMode.LIGHT
             "DARK" -> ThemeMode.DARK
-            else -> ThemeMode.SYSTEM
+            // 旧版本"跟随系统"已删除, 统一回退为明亮.
+            else -> ThemeMode.LIGHT
         }
     }
 

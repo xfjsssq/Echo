@@ -84,23 +84,25 @@ class RecordingService : Service() {
         const val ACTION_RESTART = "com.echo.recorder.action.RESTART"
         const val EXTRA_SAVE_PENDING = "extra_save_pending"
         const val ACTION_KILL = "com.echo.recorder.action.KILL"
-        val BUFFERING_TEXTS = listOf(
-            "嘘～小E正在认真聆听",
-            "小E的耳朵竖起来了，正在捕捉周围的声音",
-            "别担心，小E帮你记住每一句重要的话",
-            "正在缓冲中，按下暂停即可保存最近几分钟",
-            "小E默默守护你的每一次对话",
-            "所有音频只在本地，小E绝不上传",
-            "正在记录中，你可以随时取出刚刚说过的话",
-            "小声说，小E连听见风声都会帮你存下来哦",
-            "别让重要的话溜走，小E在听",
-            "录制不受干扰，你可以去做别的事",
-            "小E是个安静的小助手，只记录，不打扰",
-            "记得用通知栏按钮快速暂停和保存",
-            "安心去聊，回放的事交给小E",
-            "你永远可以信任小E的录音兜底能力",
-            "小E提醒你：录音需遵守当地法律哦",
-        )
+
+        /**
+         * 根据当前语言获取通知栏轮换文案数组.
+         *
+         * 服务没有 Compose 上下文, 直接读 DataStore 语言设置后选择对应资源.
+         * 中文: R.array.notify_texts_zh, 英文: R.array.notify_texts_en.
+         */
+        fun bufferingTexts(context: Context): List<String> {
+            val language = runBlocking {
+                try {
+                    SettingsRepository(context).language.first()
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+            val resId = if (language == "en") R.array.notify_texts_en else R.array.notify_texts_zh
+            return runCatching { context.resources.getStringArray(resId).toList() }
+                .getOrDefault(listOf("Echo"))
+        }
 
         /** 低于此时长(ms)的缓冲视为空片段, 不创建文件. */
         const val MIN_SAVE_DURATION_MS = 1000L
@@ -264,9 +266,9 @@ class RecordingService : Service() {
 
     private fun rebuildNotification() {
         val text = when {
-            _saving.value -> "正在保存..."
-            _phase.value == Phase.IDLE -> "小E随时等待您的指令"
-            _phase.value == Phase.REVIEW -> "已暂停, 请决定这段录音的去留"
+            _saving.value -> getString(R.string.saving)
+            _phase.value == Phase.IDLE -> getString(R.string.notify_idle_text)
+            _phase.value == Phase.REVIEW -> getString(R.string.review_title)
             else -> lastRotatedText
         }
         startForeground(NOTIFICATION_ID, buildNotification(text))
@@ -276,7 +278,7 @@ class RecordingService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "即时回放", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, getString(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
             val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             mgr.createNotificationChannel(channel)
         }
@@ -293,7 +295,7 @@ class RecordingService : Service() {
     }
 
     private fun randomBufferingText(): String {
-        val list = BUFFERING_TEXTS
+        val list = bufferingTexts(this)
         if (list.size <= 1) return list.first().also { lastRotatedText = it }
         var idx = (Math.random() * list.size).toInt()
         if (idx == lastTextIndex) idx = (idx + 1) % list.size
@@ -311,12 +313,12 @@ class RecordingService : Service() {
      */
     private fun buildNotification(text: String = ""): Notification {
         val pendingFlag = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val title = "小E"
+        val title = getString(R.string.app_name)
         val contentText: String
         when {
-            _saving.value -> contentText = "正在保存..."
-            _phase.value == Phase.IDLE -> contentText = "小E随时等待您的指令"
-            _phase.value == Phase.REVIEW -> contentText = "已暂停, 请决定这段录音的去留"
+            _saving.value -> contentText = getString(R.string.saving)
+            _phase.value == Phase.IDLE -> contentText = getString(R.string.notify_idle_text)
+            _phase.value == Phase.REVIEW -> contentText = getString(R.string.review_title)
             else -> contentText = if (text.isNotEmpty()) text else randomBufferingText()
         }
 
@@ -332,7 +334,7 @@ class RecordingService : Service() {
             Phase.BUFFERING -> if (!_saving.value) {
                 builder.addAction(
                     android.R.drawable.ic_media_pause,
-                    "暂停",
+                    getString(R.string.pause),
                     pendingIntent(ACTION_PAUSE, pendingFlag),
                 )
             }
@@ -340,12 +342,12 @@ class RecordingService : Service() {
             Phase.REVIEW -> {
                 builder.addAction(
                     android.R.drawable.ic_menu_save,
-                    "保存",
+                    getString(R.string.save),
                     pendingIntent(ACTION_SAVE, pendingFlag),
                 )
                 builder.addAction(
                     android.R.drawable.ic_menu_delete,
-                    "删除",
+                    getString(R.string.delete),
                     pendingIntent(ACTION_DELETE, pendingFlag),
                 )
             }

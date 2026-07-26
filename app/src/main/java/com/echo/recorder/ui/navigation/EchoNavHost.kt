@@ -13,6 +13,7 @@ import com.echo.recorder.ui.list.PublicDirManagementScreen
 import com.echo.recorder.ui.lock.PasswordSetupScreen
 import com.echo.recorder.ui.onboarding.OnboardingScreen
 import com.echo.recorder.ui.settings.SettingsScreen
+import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.record.RecordScreen
 import com.echo.recorder.ui.record.RecordViewModel
 
@@ -27,6 +28,8 @@ fun EchoNavHost(
     onRequestPermission: () -> Unit,
     onRestartService: (savePending: Boolean) -> Unit,
     onRequestExit: () -> Unit,
+    themeMode: ThemeMode = ThemeMode.LIGHT,
+    onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     val context = LocalContext.current
     val listViewModel = remember { ListViewModel(context) }
@@ -57,6 +60,8 @@ fun EchoNavHost(
                 onOpenAbout = { navController.navigate(EchoRoutes.ABOUT) },
                 onOpenPublicDir = { navController.navigate(EchoRoutes.PUBLIC_DIR) },
                 onChangePassword = { navController.navigate(EchoRoutes.PASSWORD_SETUP) },
+                themeMode = themeMode,
+                onThemeChange = onThemeChange,
             )
         }
         composable(EchoRoutes.ONBOARDING) {

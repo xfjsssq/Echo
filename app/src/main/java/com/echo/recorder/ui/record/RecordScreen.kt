@@ -40,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
+import com.echo.recorder.R
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.ui.formatElapsed
 import com.echo.recorder.ui.fmtTime
@@ -66,15 +68,15 @@ fun RecordScreen(
     state.pendingRecovery?.let { rec ->
         AlertDialog(
             onDismissRequest = { /* 必须选择, 不可外部关闭 */ },
-            title = { Text("由于您上次离开得太着急, 还好小E帮你暂停了!") },
+            title = { Text(stringResource(R.string.recovery_title)) },
             text = {
-                Text("这里有一段未处理的录音, 要保留它吗?\n时间: ${fmtTime(rec.createdAt)}")
+                Text(stringResource(R.string.recovery_text, fmtTime(rec.createdAt)))
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.recoverKeep() }) { Text("保留") }
+                TextButton(onClick = { viewModel.recoverKeep() }) { Text(stringResource(R.string.keep)) }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.recoverDiscard() }) { Text("删除") }
+                TextButton(onClick = { viewModel.recoverDiscard() }) { Text(stringResource(R.string.delete)) }
             },
         )
     }
@@ -82,13 +84,13 @@ fun RecordScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Echo") },
+                title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(onClick = onOpenList) {
-                        Icon(Icons.Filled.List, contentDescription = "录音列表")
+                        Icon(Icons.Filled.List, contentDescription = stringResource(R.string.record_list))
                     }
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "设置")
+                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings))
                     }
                 },
             )
@@ -141,12 +143,12 @@ private fun IdleContent(hasPermission: Boolean, onStart: () -> Unit) {
             shape = CircleShape,
             containerColor = if (hasPermission) MaterialTheme.colorScheme.primary else Color.Gray,
         ) {
-            Text("开始", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.start), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
         if (!hasPermission) {
             Spacer(Modifier.height(24.dp))
             Text(
-                "需要麦克风权限才能录音",
+                stringResource(R.string.mic_permission_needed),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -160,7 +162,7 @@ private fun BufferingContent(onPause: () -> Unit, saving: Boolean = false) {
             // 后台保存中: 显示加载态, 避免用户重复点击并给出反馈.
             CircularProgressIndicator(modifier = Modifier.size(80.dp), color = Color(0xFFD32F2F))
             Spacer(Modifier.height(16.dp))
-            Text("正在保存...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.saving), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             FloatingActionButton(
                 onClick = onPause,
@@ -170,13 +172,13 @@ private fun BufferingContent(onPause: () -> Unit, saving: Boolean = false) {
             ) {
                 Icon(
                     Icons.Filled.Pause,
-                    contentDescription = "暂停",
+                    contentDescription = stringResource(R.string.pause),
                     tint = Color.White,
                     modifier = Modifier.size(56.dp),
                 )
             }
             Spacer(Modifier.height(16.dp))
-            Text("即时回放运行中", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.buffering_running), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -185,7 +187,7 @@ private fun BufferingContent(onPause: () -> Unit, saving: Boolean = false) {
 private fun ReviewContent(onSave: () -> Unit, onDelete: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            "已暂停, 请决定这段录音的去留",
+            stringResource(R.string.review_title),
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(bottom = 32.dp),
         )
@@ -193,13 +195,13 @@ private fun ReviewContent(onSave: () -> Unit, onDelete: () -> Unit) {
             ExtendedFloatingActionButton(
                 onClick = onSave,
                 icon = { Icon(Icons.Filled.List, contentDescription = null) },
-                text = { Text("保存") },
+                text = { Text(stringResource(R.string.save)) },
                 containerColor = MaterialTheme.colorScheme.primary,
             )
             ExtendedFloatingActionButton(
                 onClick = onDelete,
                 icon = { Icon(Icons.Filled.ExitToApp, contentDescription = null) },
-                text = { Text("删除") },
+                text = { Text(stringResource(R.string.delete)) },
                 containerColor = Color(0xFFD32F2F),
             )
         }
@@ -220,7 +222,7 @@ private fun ExitButton(onExit: () -> Unit, modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.size(6.dp))
         Text(
-            "退出并停止录音",
+            stringResource(R.string.exit_stop_recording),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
         )
@@ -229,16 +231,16 @@ private fun ExitButton(onExit: () -> Unit, modifier: Modifier = Modifier) {
     if (askConfirm) {
         AlertDialog(
             onDismissRequest = { askConfirm = false },
-            title = { Text("确定要彻底退出小E吗?") },
-            text = { Text("当前未保存的录音将被丢弃。") },
+            title = { Text(stringResource(R.string.exit_confirm_title)) },
+            text = { Text(stringResource(R.string.exit_confirm_text)) },
             confirmButton = {
                 TextButton(onClick = {
                     askConfirm = false
                     askPassword = true
-                }) { Text("确认退出") }
+                }) { Text(stringResource(R.string.exit_confirm_button)) }
             },
             dismissButton = {
-                TextButton(onClick = { askConfirm = false }) { Text("取消") }
+                TextButton(onClick = { askConfirm = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

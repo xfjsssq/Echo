@@ -73,7 +73,32 @@
     <string name="group_storage">Storage</string>
     <string name="group_appearance">Appearance &amp; language</string>
     <string name="group_help">Help &amp; about</string>
-    <string name="buffer_duration">Buffer duration</string>
+    <!-- Buffer duration (labels are composed in code; units provided here). -->
+    <string name="buffer_seconds_unit">s</string>
+    <string name="buffer_minutes_unit">min</string>
+    <string name="buffer_duration_label">%1$s (%2$s)</string>
+
+    <!-- Notification bar IDLE state text. -->
+    <string name="notify_idle_text">Echo is ready for your command</string>
+
+    <!-- Notification rotating texts (BUFFERING state), 1:1 with values. -->
+    <string-array name="notify_texts_en">
+        <item>Shh — Echo is listening carefully</item>
+        <item>Echo\'s ears are up, catching the sounds around you</item>
+        <item>Don\'t worry — Echo remembers every important word for you</item>
+        <item>Buffering — tap pause to save the last few minutes</item>
+        <item>Echo quietly guards every conversation of yours</item>
+        <item>All audio stays local — Echo never uploads anything</item>
+        <item>Recording — you can always pull out what was just said</item>
+        <item>Speak softly — Echo will even save the whisper of wind</item>
+        <item>Don\'t let important words slip away — Echo is listening</item>
+        <item>Recording without interruption — feel free to do other things</item>
+        <item>Echo is a quiet helper — it records, never disturbs</item>
+        <item>Use the notification buttons to pause and save quickly</item>
+        <item>Chat with peace of mind — leave the replay to Echo</item>
+        <item>You can always trust Echo\'s recording safety net</item>
+        <item>Echo reminds you: recording must comply with local laws</item>
+    </string-array>
     <string name="privacy_mode">Privacy mode</string>
     <string name="password_protection">Password protection</string>
     <string name="change_password">Change password</string>
@@ -89,7 +114,6 @@
     <!-- Theme -->
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
-    <string name="theme_system">Follow system</string>
 
     <!-- Language -->
     <string name="language_selection_title">Please select language</string>

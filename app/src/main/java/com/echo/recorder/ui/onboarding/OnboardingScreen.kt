@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.echo.recorder.R
-import com.echo.recorder.settings.ThemeMode
+import com.echo.recorder.ui.theme.ThemeMode
 
 /** 引导卡片类型. */
 private enum class OnboardingCardType {
@@ -77,7 +77,8 @@ private val CARDS = listOf(
 fun OnboardingScreen(
     onFinish: () -> Unit,
     onEnablePublicDir: () -> Unit = {},
-    onSelectTheme: (ThemeMode) -> Unit = {},
+    themeMode: ThemeMode = ThemeMode.LIGHT,
+    onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     var index by remember { mutableIntStateOf(0) }
     val card = CARDS[index]
@@ -147,7 +148,8 @@ fun OnboardingScreen(
                     OnboardingCardType.THEME -> ThemeCardContent(
                         titleRes = card.titleRes,
                         textRes = card.textRes,
-                        onSelect = onSelectTheme,
+                        selected = themeMode,
+                        onSelect = onThemeChange,
                     )
                     else -> PlainCardContent(
                         card = card,
@@ -216,9 +218,9 @@ private fun PlainCardContent(
 private fun ThemeCardContent(
     titleRes: Int,
     textRes: Int,
+    selected: ThemeMode,
     onSelect: (ThemeMode) -> Unit,
 ) {
-    var selected by remember { mutableStateOf(ThemeMode.SYSTEM) }
     Text(
         stringResource(titleRes),
         style = MaterialTheme.typography.headlineSmall,
@@ -239,10 +241,7 @@ private fun ThemeCardContent(
                     .fillMaxWidth()
                     .selectable(
                         selected = selected == mode,
-                        onClick = {
-                            selected = mode
-                            onSelect(mode)
-                        },
+                        onClick = { onSelect(mode) },
                         role = Role.RadioButton,
                     )
                     .padding(vertical = 8.dp),
@@ -254,7 +253,6 @@ private fun ThemeCardContent(
                         when (mode) {
                             ThemeMode.LIGHT -> R.string.theme_light
                             ThemeMode.DARK -> R.string.theme_dark
-                            ThemeMode.SYSTEM -> R.string.theme_system
                         }
                     ),
                     modifier = Modifier.padding(start = 12.dp),

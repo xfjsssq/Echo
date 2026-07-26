@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -21,12 +22,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.echo.recorder.ui.theme.ThemeManager
 import androidx.navigation.compose.rememberNavController
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.settings.SettingsRepository
-import com.echo.recorder.settings.ThemeMode
+import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.lock.LockScreen
 import com.echo.recorder.ui.lock.PasswordPromptDialog
 import com.echo.recorder.ui.navigation.EchoNavHost
@@ -66,6 +68,11 @@ fun EchoApp(
     val settings = remember { SettingsRepository(context) }
     val passwordEnabled by produceState(initialValue = false) {
         settings.passwordEnabled.collect { value = it }
+    }
+
+    // 主题模式: 响应式观察 DataStore, 主题切换无需重建 Activity, 直接由 Compose 状态驱动.
+    val themeMode by produceState(initialValue = ThemeMode.LIGHT) {
+        settings.themeMode.collect { value = it }
     }
 
     // 首次启动引导: 语言选择 -> 隐私协议 -> 引导卡片 -> 主界面.
@@ -109,9 +116,9 @@ fun EchoApp(
                 onEnablePublicDir = {
                     scope.launch { settings.setPublicDirEnabled(true) }
                 },
-                onSelectTheme = { mode ->
-                    scope.launch { settings.setThemeMode(mode) }
-                },
+                // 主题切换: 仅更新 Compose 状态 + 持久化, 不重建 Activity, 避免打断引导流程.
+                themeMode = themeMode,
+                onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
             )
             3 -> {
                 // 引导完成, 进入主界面前先请求权限.
@@ -221,5 +228,7 @@ fun EchoApp(
         onRequestPermission = onRequestPermission,
         onRestartService = onRestartService,
         onRequestExit = onRequestExit,
+        themeMode = themeMode,
+        onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
     )
 }
