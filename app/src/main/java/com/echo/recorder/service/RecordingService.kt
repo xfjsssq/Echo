@@ -58,6 +58,7 @@ class RecordingService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var rotateJob: Job? = null
     private var lastTextIndex: Int = -1
+    private var languageJob: Job? = null
 
     private val _phase = MutableStateFlow(Phase.IDLE)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
@@ -114,6 +115,19 @@ class RecordingService : Service() {
         createNotificationChannel()
         bufferSeconds = readBufferSeconds()
         startForeground(NOTIFICATION_ID, buildNotification())
+        // 监听语言变化, 变化时立即重建通知以切换文案语言.
+        observeLanguage()
+    }
+
+    /** 监听 DataStore 语言设置, 变化时重建通知. */
+    private fun observeLanguage() {
+        languageJob?.cancel()
+        languageJob = scope.launch {
+            SettingsRepository(this@RecordingService).language.collect {
+                // 语言切换后重建通知, 使文案立即切换.
+                rebuildNotification()
+            }
+        }
     }
 
     private fun repo(): RecordingRepository = ServiceLocator.repository(this)
@@ -266,9 +280,9 @@ class RecordingService : Service() {
 
     private fun rebuildNotification() {
         val text = when {
-            _saving.value -> getString(R.string.saving)
+            _saving.value -> getString(R.string.notification_saving)
             _phase.value == Phase.IDLE -> getString(R.string.notify_idle_text)
-            _phase.value == Phase.REVIEW -> getString(R.string.review_title)
+            _phase.value == Phase.REVIEW -> getString(R.string.notification_review_title)
             else -> lastRotatedText
         }
         startForeground(NOTIFICATION_ID, buildNotification(text))
@@ -316,9 +330,9 @@ class RecordingService : Service() {
         val title = getString(R.string.app_name)
         val contentText: String
         when {
-            _saving.value -> contentText = getString(R.string.saving)
+            _saving.value -> contentText = getString(R.string.notification_saving)
             _phase.value == Phase.IDLE -> contentText = getString(R.string.notify_idle_text)
-            _phase.value == Phase.REVIEW -> contentText = getString(R.string.review_title)
+            _phase.value == Phase.REVIEW -> contentText = getString(R.string.notification_review_title)
             else -> contentText = if (text.isNotEmpty()) text else randomBufferingText()
         }
 
@@ -331,10 +345,11 @@ class RecordingService : Service() {
             .setOnlyAlertOnce(true)
 
         when (_phase.value) {
+            // BUFFERING + saving: 无操作按钮, 文案显示"正在保存...".
             Phase.BUFFERING -> if (!_saving.value) {
                 builder.addAction(
                     android.R.drawable.ic_media_pause,
-                    getString(R.string.pause),
+                    getString(R.string.notification_pause),
                     pendingIntent(ACTION_PAUSE, pendingFlag),
                 )
             }
@@ -342,12 +357,12 @@ class RecordingService : Service() {
             Phase.REVIEW -> {
                 builder.addAction(
                     android.R.drawable.ic_menu_save,
-                    getString(R.string.save),
+                    getString(R.string.notification_save),
                     pendingIntent(ACTION_SAVE, pendingFlag),
                 )
                 builder.addAction(
                     android.R.drawable.ic_menu_delete,
-                    getString(R.string.delete),
+                    getString(R.string.notification_delete),
                     pendingIntent(ACTION_DELETE, pendingFlag),
                 )
             }
@@ -376,6 +391,7 @@ class RecordingService : Service() {
             saveUnprocessed()
         }
         stopRotate()
+        languageJob?.cancel(); languageJob = null
         buffer?.release(); buffer = null
         scope.cancel()
         super.onDestroy()

@@ -116,7 +116,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
         if (idx >= 0) {
             listState.animateScrollToItem(idx)
         } else {
-            Toast.makeText(context, "当天没有录音记录", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.no_recording_that_day), Toast.LENGTH_SHORT).show()
         }
         scrollTarget = null
     }
@@ -127,6 +127,12 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
         topBar = {
             Column {
                 TopAppBar(
+                    navigationIcon = {
+                        // 日历入口放到标题左侧 (导航图标位), 与主页右上角设置按钮完全错开.
+                        IconButton(onClick = { showCalendar = true }) {
+                            Icon(Icons.Filled.CalendarMonth, contentDescription = stringResource(R.string.calendar))
+                        }
+                    },
                     title = { Text(stringResource(R.string.record_list)) },
                     actions = {
                         if (state.tab == ListTab.LONG_TERM) {
@@ -134,21 +140,18 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                                 Icon(Icons.Filled.FileOpen, contentDescription = stringResource(R.string.import_from_public_dir))
                             }
                         }
-                        IconButton(onClick = { showCalendar = true }) {
-                            Icon(Icons.Filled.CalendarMonth, contentDescription = stringResource(R.string.calendar))
-                        }
                     },
                 )
                 TabRow(selectedTabIndex = state.tab.ordinal) {
                     Tab(
                         selected = state.tab == ListTab.TEMPORARY,
                         onClick = { viewModel.switchTab(ListTab.TEMPORARY) },
-                        text = { Text("临时录音") },
+                        text = { Text(stringResource(R.string.temporary_recordings)) },
                     )
                     Tab(
                         selected = state.tab == ListTab.LONG_TERM,
                         onClick = { viewModel.switchTab(ListTab.LONG_TERM) },
-                        text = { Text("长期录音") },
+                        text = { Text(stringResource(R.string.longterm_recordings)) },
                     )
                 }
             }
@@ -166,7 +169,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
     ) { padding ->
         if (items.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("暂无录音", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.no_recordings), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = listState) {
@@ -209,7 +212,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
             recordingDays = recordingDays,
             onDateSelected = { date ->
                 showCalendar = false
-                val dayStr = dayFmt.format(Date(startOfDayFromLocal(date)))
+                val dayStr = dayFmt().format(Date(startOfDayFromLocal(date)))
                 scrollTarget = dayStr
             },
             onDismiss = { showCalendar = false },
@@ -415,7 +418,13 @@ private fun CalendarDialog(
 ) {
     var month by remember { mutableStateOf(YearMonth.now()) }
     val monthLabel: String = remember(month) {
-        "%d年%02d月".format(month.year, month.monthValue)
+        if (languageIsEn()) {
+            java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.ENGLISH).format(
+                java.util.Date.from(month.atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant())
+            )
+        } else {
+            "%d年%02d月".format(month.year, month.monthValue)
+        }
     }
     val leadingBlanks = month.atDay(1).dayOfWeek.value % 7 // 周日=0
     val daysInMonth = month.lengthOfMonth()
@@ -423,7 +432,7 @@ private fun CalendarDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("关闭") }
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
         title = {
             Row(
@@ -431,7 +440,7 @@ private fun CalendarDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = { month = month.minusMonths(1) }) {
-                    Icon(Icons.Filled.ChevronLeft, contentDescription = "上一月")
+                    Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.previous_month))
                 }
                 Text(
                     monthLabel,
@@ -440,14 +449,22 @@ private fun CalendarDialog(
                     fontWeight = FontWeight.Medium,
                 )
                 IconButton(onClick = { month = month.plusMonths(1) }) {
-                    Icon(Icons.Filled.ChevronRight, contentDescription = "下一月")
+                    Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
                 }
             }
         },
         text = {
             Column {
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    listOf("日", "一", "二", "三", "四", "五", "六").forEach { w ->
+                    listOf(
+                        stringResource(R.string.weekday_sun),
+                        stringResource(R.string.weekday_mon),
+                        stringResource(R.string.weekday_tue),
+                        stringResource(R.string.weekday_wed),
+                        stringResource(R.string.weekday_thu),
+                        stringResource(R.string.weekday_fri),
+                        stringResource(R.string.weekday_sat),
+                    ).forEach { w ->
                         Text(
                             w, modifier = Modifier.weight(1f), textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.labelSmall,
@@ -507,7 +524,11 @@ private fun RecordingRow(
     onSaveToPublic: () -> Unit = {},
 ) {
     val painterSelect = if (selected) Icons.Filled.CheckCircle else null
+    // 空片段判定: 时长不足 1 秒. 若文件实际存在且大小 > 0 但读不到时长, 视为"已损坏".
+    val fileExists = runCatching { java.io.File(java.net.URI(rec.fileUrl)).exists() }.getOrDefault(false)
+    val fileSize = runCatching { java.io.File(java.net.URI(rec.fileUrl)).length() }.getOrDefault(0L)
     val isEmpty = rec.durationMs < MIN_PLAYABLE_MS
+    val isCorrupted = isEmpty && fileExists && fileSize > 0
 
     Column(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onTap, onLongClick = onLongPress).padding(horizontal = 16.dp, vertical = 12.dp),
@@ -526,7 +547,14 @@ private fun RecordingRow(
                 Spacer(Modifier.size(12.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(if (isEmpty) "空片段" else rec.displayName, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    when {
+                        isCorrupted -> stringResource(R.string.file_corrupted)
+                        isEmpty -> stringResource(R.string.empty_fragment)
+                        else -> rec.displayName
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                )
                 Text(
                     text = "${timeOnly(rec.createdAt)}   ${formatElapsed(rec.durationMs)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -535,7 +563,8 @@ private fun RecordingRow(
             }
             if (!selectionMode) {
                 Text(
-                    text = if (rec.category.name == "LONG_TERM") "长期" else "临时",
+                    text = if (rec.category.name == "LONG_TERM") stringResource(R.string.long_term)
+                    else stringResource(R.string.temporary),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -545,7 +574,8 @@ private fun RecordingRow(
         if (expanded) {
             if (isEmpty) {
                 Text(
-                    "空片段, 无法播放",
+                    if (isCorrupted) stringResource(R.string.file_corrupted_cant_play)
+                    else stringResource(R.string.empty_fragment_cant_play),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
@@ -616,7 +646,7 @@ private fun MiniPlayer(
             }) {
                 Icon(
                     if (isPlayingThis && ps.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = "播放/暂停",
+                    contentDescription = stringResource(R.string.play_pause),
                 )
             }
             val cur = if (isPlayingThis) ps.currentPositionMs else 0
@@ -652,18 +682,30 @@ private fun BatchBottomBar(count: Int, onDelete: () -> Unit, onMoveToLongTerm: (
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("已选 $count", modifier = Modifier.weight(1f))
-        IconButton(onClick = onMoveToLongTerm) { Icon(Icons.Filled.Archive, contentDescription = "批量移至长期") }
-        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "批量删除") }
-        IconButton(onClick = onExit) { Icon(Icons.Filled.CheckCircle, contentDescription = "退出多选") }
+        Text(
+            text = stringResource(R.string.selected_count, count),
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onMoveToLongTerm) { Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.batch_move_to_longterm)) }
+        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.batch_delete)) }
+        IconButton(onClick = onExit) { Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.exit_selection)) }
     }
 }
 
-private val dayFmt = java.text.SimpleDateFormat("yyyy年MM月dd日 EEEE", java.util.Locale.getDefault())
-private val timeFmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+private fun dayFmt(): java.text.SimpleDateFormat {
+    val locale = java.util.Locale.getDefault()
+    // 英文环境使用 "Jul 26, 2026" 格式, 中文环境使用 "2026年07月26日 星期日".
+    val pattern = if (languageIsEn()) "MMM dd, yyyy" else "yyyy年MM月dd日 EEEE"
+    return java.text.SimpleDateFormat(pattern, locale)
+}
 
-private fun dateKey(epochMs: Long): String = dayFmt.format(java.util.Date(epochMs))
-private fun timeOnly(epochMs: Long): String = timeFmt.format(java.util.Date(epochMs))
+private fun timeFmt(): java.text.SimpleDateFormat =
+    java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+
+private fun languageIsEn(): Boolean = java.util.Locale.getDefault().language == "en"
+
+private fun dateKey(epochMs: Long): String = dayFmt().format(java.util.Date(epochMs))
+private fun timeOnly(epochMs: Long): String = timeFmt().format(java.util.Date(epochMs))
 
 private fun startOfDay(epochMs: Long): Long = java.util.Calendar.getInstance().apply {
     timeInMillis = epochMs; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)

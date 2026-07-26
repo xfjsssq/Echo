@@ -10,7 +10,9 @@
     <string name="back">返回</string>
     <string name="skip">跳过</string>
     <string name="next">下一步</string>
+    <string name="next_month">下一月</string>
     <string name="previous">上一步</string>
+    <string name="previous_month">上一月</string>
     <string name="coming_soon">即将推出</string>
     <string name="share">分享</string>
 
@@ -29,6 +31,8 @@
     <string name="review_title">已暂停, 请决定这段录音的去留</string>
     <string name="empty_fragment">空片段</string>
     <string name="empty_fragment_cant_play">空片段, 无法播放</string>
+    <string name="file_corrupted">文件已损坏</string>
+    <string name="file_corrupted_cant_play">文件已损坏, 无法播放, 可手动删除</string>
     <string name="play_pause">播放/暂停</string>
     <string name="move_to_longterm">移至长期</string>
 
@@ -41,6 +45,14 @@
     <string name="temporary_recordings">临时录音</string>
     <string name="longterm_recordings">长期录音</string>
     <string name="no_recordings">暂无录音</string>
+    <!-- 日历星期头. -->
+    <string name="weekday_sun">日</string>
+    <string name="weekday_mon">一</string>
+    <string name="weekday_tue">二</string>
+    <string name="weekday_wed">三</string>
+    <string name="weekday_thu">四</string>
+    <string name="weekday_fri">五</string>
+    <string name="weekday_sat">六</string>
     <string name="no_recording_that_day">当天没有录音记录</string>
     <string name="calendar">日历</string>
     <string name="long_term">长期</string>
@@ -80,6 +92,14 @@
 
     <!-- 通知栏 IDLE 状态文案. -->
     <string name="notify_idle_text">小E随时等待您的指令</string>
+
+    <!-- 通知栏按钮与状态. -->
+    <string name="notification_pause">暂停</string>
+    <string name="notification_save">保存</string>
+    <string name="notification_delete">删除</string>
+    <string name="notification_saving">正在保存...</string>
+    <string name="notification_review_title">小E已经帮你保留好音频</string>
+    <string name="notification_review_text">如何处置</string>
 
     <!-- 通知栏轮换文案 (BUFFERING 状态), 与 values-en 一一对应. -->
     <string-array name="notify_texts_zh">

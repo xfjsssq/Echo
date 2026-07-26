@@ -1,5 +1,7 @@
 package com.echo.recorder.data
 
+import android.content.Context
+import android.media.MediaMetadataRetriever
 import com.echo.recorder.common.bufferDir
 import com.echo.recorder.common.longtermDir
 import com.echo.recorder.common.pendingDir
@@ -46,9 +48,27 @@ class FilesystemRecordingDataSource(
         displayName = f.name,
         fileUrl = f.toURI().toString(),
         createdAt = f.lastModified(),
-        durationMs = 0L,
+        durationMs = readDurationMs(f),
         category = cat,
     )
+
+    /**
+     * 读取音频文件时长 (ms). 读取失败或文件损坏返回 0.
+     *
+     * 使用 MediaMetadataRetriever 而非 MediaPlayer: 元数据读取更快, 不需要完整解码.
+     * 若文件实际存在且大小 > 0 但读不到时长, 返回 0 并由上层按"文件存在"处理.
+     */
+    private fun readDurationMs(file: File): Long {
+        if (!file.exists() || file.length() == 0L) return 0L
+        val retriever = MediaMetadataRetriever()
+        return runCatching {
+            retriever.setDataSource(file.absolutePath)
+            val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            ms
+        }.getOrElse { 0L }.also {
+            runCatching { retriever.release() }
+        }
+    }
 
     override fun getById(id: String): Recording? = _state.value.firstOrNull { it.id == id }
 

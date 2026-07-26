@@ -10,7 +10,9 @@
     <string name="back">Back</string>
     <string name="skip">Skip</string>
     <string name="next">Next</string>
+    <string name="next_month">Next month</string>
     <string name="previous">Previous</string>
+    <string name="previous_month">Previous month</string>
     <string name="coming_soon">Coming soon</string>
     <string name="share">Share</string>
 
@@ -29,6 +31,8 @@
     <string name="review_title">Paused — decide what to do with this clip</string>
     <string name="empty_fragment">Empty clip</string>
     <string name="empty_fragment_cant_play">Empty clip, cannot play</string>
+    <string name="file_corrupted">File corrupted</string>
+    <string name="file_corrupted_cant_play">File corrupted, cannot play, delete manually</string>
     <string name="play_pause">Play / Pause</string>
     <string name="move_to_longterm">Move to long-term</string>
 
@@ -41,6 +45,14 @@
     <string name="temporary_recordings">Temporary</string>
     <string name="longterm_recordings">Long-term</string>
     <string name="no_recordings">No recordings</string>
+    <!-- Calendar weekday headers. -->
+    <string name="weekday_sun">Sun</string>
+    <string name="weekday_mon">Mon</string>
+    <string name="weekday_tue">Tue</string>
+    <string name="weekday_wed">Wed</string>
+    <string name="weekday_thu">Thu</string>
+    <string name="weekday_fri">Fri</string>
+    <string name="weekday_sat">Sat</string>
     <string name="no_recording_that_day">No recordings on that day</string>
     <string name="calendar">Calendar</string>
     <string name="long_term">Long-term</string>
@@ -80,6 +92,14 @@
 
     <!-- Notification bar IDLE state text. -->
     <string name="notify_idle_text">Echo is ready for your command</string>
+
+    <!-- Notification bar buttons and states. -->
+    <string name="notification_pause">Pause</string>
+    <string name="notification_save">Save</string>
+    <string name="notification_delete">Delete</string>
+    <string name="notification_saving">Saving...</string>
+    <string name="notification_review_title">Echo saved your audio</string>
+    <string name="notification_review_text">What would you like to do?</string>
 
     <!-- Notification rotating texts (BUFFERING state), 1:1 with values. -->
     <string-array name="notify_texts_en">
