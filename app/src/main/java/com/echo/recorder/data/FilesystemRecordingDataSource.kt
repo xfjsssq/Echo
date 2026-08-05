@@ -1,11 +1,9 @@
 package com.echo.recorder.data
 
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
-import com.echo.recorder.common.bufferDir
-import com.echo.recorder.common.longtermDir
-import com.echo.recorder.common.pendingDir
-import com.echo.recorder.common.unprocessedDir
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.domain.model.RecordingCategory
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 
 /**
- * 本地文件系统录音数据源. 纯 JVM 操作, 不依赖 MediaMetadataRetriever.
+ * 本地文件系统录音数据源.
  *
  * 分类即目录: pending/ longterm/ unprocessed/ 各自对应一个 RecordingCategory.
  * _buffer/ 是实时环形缓冲, 不进列表 (load 不扫它).
@@ -28,19 +26,33 @@ class FilesystemRecordingDataSource(
     private val _state = MutableStateFlow(initialState)
     override val state: StateFlow<List<Recording>> = _state.asStateFlow()
 
-    /** 扫盘一次. 只扫 pending/longterm/unprocessed. */
+    /**
+     * 时长缓存: 文件名 -> (mtime, durationMs).
+     * load() 每次扫盘都会为每个文件创建 MediaMetadataRetriever (native 对象),
+     * 文件多时开销明显; 文件未变化时直接命中缓存, 避免重复 native 调用.
+     */
+    private val durationCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Long>>()
+
+    /** 扫盘一次. 只扫分类目录 (pending/longterm/unprocessed), 不扫 _buffer. */
     override fun load() {
-        val dirs = listOf(
-            pendingDir(context!!) to RecordingCategory.TEMPORARY,
-            longtermDir(context!!) to RecordingCategory.LONG_TERM,
-            unprocessedDir(context!!) to RecordingCategory.UNPROCESSED,
-        )
         val all = mutableListOf<Recording>()
-        for ((d, cat) in dirs) {
-            val files = d.listFiles()?.filter { f -> f.isFile && f.name.endsWith(".m4a") } ?: continue
-            all += files.map { f -> toRecording(f, cat) }
+        // 兼容两种用法: 生产传 context (扫 recordingsDir 分类子目录), 测试传 baseDir (扫其根目录).
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name.endsWith(".m4a")) {
+                // 根目录直接文件视为临时.
+                all += toRecording(f, RecordingCategory.TEMPORARY)
+            } else if (f.isDirectory && f.name != "_buffer") {
+                val cat = when (f.name) {
+                    "longterm" -> RecordingCategory.LONG_TERM
+                    "unprocessed" -> RecordingCategory.UNPROCESSED
+                    else -> RecordingCategory.TEMPORARY
+                }
+                f.listFiles()?.filter { it.isFile && it.name.endsWith(".m4a") }
+                    ?.forEach { all += toRecording(it, cat) }
+            }
         }
-        _state.value = all
+        // 最新录音在最上方 (用户要求: 最近的在顶部)
+        _state.value = all.sortedByDescending { it.createdAt }
     }
 
     private fun toRecording(f: File, cat: RecordingCategory): Recording = Recording(
@@ -55,19 +67,55 @@ class FilesystemRecordingDataSource(
     /**
      * 读取音频文件时长 (ms). 读取失败或文件损坏返回 0.
      *
-     * 使用 MediaMetadataRetriever 而非 MediaPlayer: 元数据读取更快, 不需要完整解码.
-     * 若文件实际存在且大小 > 0 但读不到时长, 返回 0 并由上层按"文件存在"处理.
+     * 优先使用 MediaMetadataRetriever (快, 不需要解码).
+     * 失败时回退到 MediaExtractor 遍历 sample 计算时长 (解决部分设备上 MetadataRetriever 不稳定的问题).
      */
     private fun readDurationMs(file: File): Long {
         if (!file.exists() || file.length() == 0L) return 0L
-        val retriever = MediaMetadataRetriever()
-        return runCatching {
-            retriever.setDataSource(file.absolutePath)
-            val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            ms
-        }.getOrElse { 0L }.also {
-            runCatching { retriever.release() }
+        // 缓存命中 (mtime 未变) 直接返回, 避免重复创建 native MediaMetadataRetriever.
+        val key = file.name
+        val mtime = file.lastModified()
+        durationCache[key]?.let { (cachedMtime, cachedDur) ->
+            if (cachedMtime == mtime) return cachedDur
         }
+        val result = computeDurationMs(file)
+        durationCache[key] = mtime to result
+        return result
+    }
+
+    private fun computeDurationMs(file: File): Long {
+        // 优先尝试 MediaMetadataRetriever.
+        val retriever = MediaMetadataRetriever()
+        val metadataResult = runCatching {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        }.getOrDefault(0L)
+        runCatching { retriever.release() }
+        if (metadataResult > 0L) return metadataResult
+        // 回退: 用 MediaExtractor 遍历 sample 计算最大 pts.
+        return runCatching {
+            val extractor = MediaExtractor()
+            extractor.setDataSource(file.absolutePath)
+            var audioTrack = -1
+            for (t in 0 until extractor.trackCount) {
+                val mime = extractor.getTrackFormat(t).getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("audio")) { audioTrack = t; break }
+            }
+            if (audioTrack < 0) {
+                extractor.release()
+                return@runCatching 0L
+            }
+            extractor.selectTrack(audioTrack)
+            var maxPts = 0L
+            while (true) {
+                val pts = extractor.sampleTime
+                if (pts < 0) break
+                maxPts = maxOf(maxPts, pts)
+                if (!extractor.advance()) break
+            }
+            extractor.release()
+            maxPts / 1000 // pts 单位是 us, 转 ms
+        }.getOrDefault(0L)
     }
 
     override fun getById(id: String): Recording? = _state.value.firstOrNull { it.id == id }
@@ -84,7 +132,8 @@ class FilesystemRecordingDataSource(
             category = cat,
         )
         val withoutOld = _state.value.filterNot { it.id == rec.id }
-        _state.value = withoutOld + rec
+        // 新录音插到最前 (最新在上)
+        _state.value = listOf(rec) + withoutOld
         return rec
     }
 
@@ -96,20 +145,47 @@ class FilesystemRecordingDataSource(
         return true
     }
 
+    /** 删除超过 maxAgeMs 的临时录音 (惰性清理: 应用启动/进入时调用). */
+    override fun deleteExpiredTemporary(maxAgeMs: Long): Int {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        val expired = _state.value.filter {
+            it.category == RecordingCategory.TEMPORARY && it.createdAt < cutoff
+        }
+        if (expired.isEmpty()) return 0
+        var removed = 0
+        for (rec in expired) {
+            val f = File(java.net.URI(rec.fileUrl))
+            if (f.exists()) runCatching { f.delete() }
+            removed++
+        }
+        if (removed > 0) {
+            val ids = expired.map { it.id }.toSet()
+            _state.value = _state.value.filterNot { it.id in ids }
+        }
+        return removed
+    }
+
     /** 把录音在临时/长期之间移动 (改物理目录 + 改分类). unprocessed 也可被保留为临时. */
     override fun setCategory(id: String, category: RecordingCategory): Recording? {
         val target = _state.value.firstOrNull { it.id == id } ?: return null
         if (target.category == category) return target
         val src = File(java.net.URI(target.fileUrl))
         val destDir = when (category) {
-            RecordingCategory.LONG_TERM -> longtermDir(context!!)
-            RecordingCategory.TEMPORARY -> pendingDir(context!!)
-            RecordingCategory.UNPROCESSED -> unprocessedDir(context!!)
+            RecordingCategory.LONG_TERM -> File(dir, "longterm")
+            RecordingCategory.TEMPORARY -> File(dir, "pending")
+            RecordingCategory.UNPROCESSED -> File(dir, "unprocessed")
         }
+        runCatching { destDir.mkdirs() }
         val dest = File(destDir, src.name)
         if (src.exists()) {
-            runCatching { src.copyTo(dest, overwrite = true) }
-            runCatching { src.delete() }
+            // 优先原子移动 (同分区 renameTo, 快且不会中途丢失).
+            val renamed = runCatching { src.renameTo(dest) }.getOrDefault(false)
+            if (!renamed) {
+                // 回退: 复制 + 删除. 复制失败时绝不删除原文件, 防止数据丢失.
+                val copied = runCatching { src.copyTo(dest, overwrite = true) }.getOrDefault(null) != null
+                if (!copied) return null
+                runCatching { src.delete() }
+            }
         }
         val moved = target.copy(fileUrl = dest.toURI().toString(), category = category)
         _state.value = _state.value.map { if (it.id == id) moved else it }

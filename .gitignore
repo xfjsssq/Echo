@@ -15,6 +15,8 @@ _main_cp.txt
 _test_cp_jars.txt
 _test_cp.txt
 _cp.txt
+*.log
+*.apk
 
 # local test wrappers (not part of shipped product)
 test_runner.sh

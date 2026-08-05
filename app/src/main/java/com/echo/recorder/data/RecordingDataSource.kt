@@ -23,6 +23,9 @@ interface RecordingDataSource {
     /** 删文件 + 删库. 成功=true, 找不到=false. */
     fun delete(id: String): Boolean
 
+    /** 删除超过 maxAgeMs 的临时录音 (文件 + 记录). 返回删除数量. */
+    fun deleteExpiredTemporary(maxAgeMs: Long): Int
+
     /** 把一条录音在临时/长期之间移动 (改物理目录 + 改分类). 返回新 Recording. */
     fun setCategory(id: String, category: RecordingCategory): Recording?
 }

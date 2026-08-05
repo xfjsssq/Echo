@@ -64,6 +64,8 @@ fun EchoNavHost(
                 onOpenAbout = { navController.navigate(EchoRoutes.ABOUT) },
                 onOpenPublicDir = { navController.navigate(EchoRoutes.PUBLIC_DIR) },
                 onChangePassword = { navController.navigate(EchoRoutes.PASSWORD_SETUP) },
+                // 设置页"如何使用小E" → 重新弹出引导卡片
+                onOpenOnboarding = { navController.navigate(EchoRoutes.ONBOARDING) },
                 themeMode = themeMode,
                 onThemeChange = onThemeChange,
             )
@@ -71,6 +73,9 @@ fun EchoNavHost(
         composable(EchoRoutes.ONBOARDING) {
             OnboardingScreen(
                 onFinish = { navController.popBackStack() },
+                // 从设置页进入的引导同样支持主题切换 (选完即关闭引导)
+                themeMode = themeMode,
+                onThemeChange = onThemeChange,
             )
         }
         composable(EchoRoutes.PASSWORD_SETUP) {

@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    自适应图标 (Android 8.0+):
+    直接使用用户提供的猫咪图片作为图标位图, 背景为白色.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@mipmap/ic_launcher" />
+    <foreground android:drawable="@drawable/ic_launcher_bitmap" />
+    <monochrome android:drawable="@drawable/ic_launcher_bitmap" />
 </adaptive-icon>

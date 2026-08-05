@@ -18,6 +18,9 @@ interface RecordingRepository {
     /** 删文件 + 删库. 成功=true, 找不到=false. */
     suspend fun delete(id: String): Boolean
 
+    /** 删除超过 maxAgeMs 的临时录音 (惰性清理). 返回删除数量. */
+    suspend fun deleteExpiredTemporary(maxAgeMs: Long): Int
+
     /** 把一条录音在临时/长期之间移动. 返回新 Recording, 找不到=null. */
     suspend fun setCategory(id: String, category: RecordingCategory): Recording?
 }

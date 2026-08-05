@@ -61,6 +61,8 @@ fun PasswordSetupScreen(
     var second by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     var recoveryKey by remember { mutableStateOf<String?>(null) }
+    // 内存中暂存的密码和恢复密钥, 待用户确认恢复密钥后才写入 DataStore.
+    var pendingPassword by remember { mutableStateOf<Pair<String, String>?>(null) }
     // 图案重置 key, 用于清空 PatternLockView.
     var patternResetKey by remember { mutableIntStateOf(0) }
 
@@ -101,17 +103,15 @@ fun PasswordSetupScreen(
                     error = error,
                     onConfirm = { second = it
                         if (second == first) {
-                            // 生成恢复密钥并存储.
+                            // 先在内存中完成所有计算, 再展示恢复密钥.
                             val key = PasswordCrypto.generateRecoveryKey()
                             recoveryKey = key
                             val salt = PasswordCrypto.newSalt()
-                            scope.launch {
-                                repo.setPasswordEnabled(true)
-                                repo.setPasswordType(if (isPattern) "pattern" else "pin")
-                                repo.setPassword(PasswordCrypto.encode(first, salt))
-                                val rSalt = PasswordCrypto.newSalt()
-                                repo.setRecoveryHash(PasswordCrypto.encode(key, rSalt))
-                            }
+                            val encodedPassword = PasswordCrypto.encode(first, salt)
+                            val rSalt = PasswordCrypto.newSalt()
+                            val encodedRecovery = PasswordCrypto.encode(key, rSalt)
+                            // 密码存储推迟到用户确认恢复密钥后, 避免 Activity 被销毁时恢复密钥未展示.
+                            pendingPassword = encodedPassword to encodedRecovery
                             step = 3
                         } else {
                             // 不一致: 回到第一次输入.
@@ -124,7 +124,17 @@ fun PasswordSetupScreen(
                 )
                 3 -> RecoveryKeyShow(
                     key = recoveryKey ?: "",
-                    onFinish = onDone,
+                    onFinish = {
+                        // 用户确认已记录恢复密钥, 现在写入密码到 DataStore.
+                        val (encPwd, encRec) = pendingPassword ?: ("" to "")
+                        scope.launch {
+                            repo.setPasswordEnabled(true)
+                            repo.setPasswordType(if (isPattern) "pattern" else "pin")
+                            repo.setPassword(encPwd)
+                            repo.setRecoveryHash(encRec)
+                        }
+                        onDone()
+                    },
                 )
             }
         }

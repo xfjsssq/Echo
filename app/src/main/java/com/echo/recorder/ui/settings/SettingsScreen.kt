@@ -4,12 +4,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -21,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.echo.recorder.ui.theme.ThemeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
 import com.echo.recorder.i18n.LocaleManager
@@ -286,7 +292,7 @@ fun SettingsScreen(
         )
     }
 
-    // 关闭密码验证.
+    // 关闭密码验证: 需验证密码, 但不删除哈希以便重新开启时无需重设密码.
     if (verifyDisablePassword) {
         PasswordPromptDialog(
             storedHash = storedHash,
@@ -295,11 +301,7 @@ fun SettingsScreen(
             onVerify = {
                 verifyDisablePassword = false
                 passwordOn = false
-                scope.launch {
-                    repo.setPasswordEnabled(false)
-                    repo.setPassword(null)
-                    repo.setPasswordType(null)
-                }
+                scope.launch { repo.setPasswordEnabled(false) }
             },
             onDismiss = { verifyDisablePassword = false },
         )
@@ -336,7 +338,7 @@ fun SettingsScreen(
         ) {
             // ---- 录音设置 ----
             GroupTitle(stringResource(R.string.group_recording))
-            Column(Modifier.selectableGroup()) {
+            SettingsCard {
                 BufferDuration.values().forEach { dur ->
                     Row(
                         modifier = Modifier
@@ -349,7 +351,7 @@ fun SettingsScreen(
                                     showRestart = true
                                 },
                             )
-                            .padding(vertical = 8.dp),
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RadioButton(selected = displaySelected == dur, onClick = null)
@@ -359,86 +361,102 @@ fun SettingsScreen(
                                 dur.label(context),
                                 dur.estimatedMb(context),
                             ),
-                            modifier = Modifier.padding(start = 12.dp),
+                            modifier = Modifier.padding(start = 8.dp),
                         )
                     }
                 }
+                Preference(
+                    title = stringResource(R.string.privacy_mode),
+                    enabled = false,
+                ) {}
             }
-            Preference(
-                title = stringResource(R.string.privacy_mode),
-                enabled = false,
-            ) {}
 
             // ---- 安全设置 ----
             GroupTitle(stringResource(R.string.group_security))
-            SwitchPreference(
-                title = stringResource(R.string.password_protection),
-                subtitle = stringResource(R.string.settings_password_subtitle),
-                checked = passwordOn,
-                onToggle = { on ->
-                    if (on) {
-                        // 开启: 若无密码则前往设置, 否则直接开启.
-                        if (storedHash == null) onOpenPasswordSetup()
-                        else { passwordOn = true; scope.launch { repo.setPasswordEnabled(true) } }
-                    } else {
-                        // 关闭: 需验证密码.
-                        verifyDisablePassword = true
-                    }
-                },
-            )
-            Preference(
-                title = stringResource(R.string.change_password),
-                subtitle = stringResource(R.string.change_password_by_password),
-            ) { showChangePassword = true }
-            Preference(
-                title = stringResource(R.string.view_recovery_key),
-                subtitle = stringResource(R.string.view_recovery_key_subtitle),
-            ) { showViewRecoveryKey = true }
-            Preference(
-                title = stringResource(R.string.reset_recovery_key_title),
-                subtitle = stringResource(R.string.reset_recovery_key_subtitle),
-            ) { showResetRecoveryKey = true }
+            SettingsCard {
+                SwitchPreference(
+                    title = stringResource(R.string.password_protection),
+                    subtitle = stringResource(R.string.settings_password_subtitle),
+                    checked = passwordOn,
+                    onToggle = { on ->
+                        if (on) {
+                            if (storedHash != null) {
+                                passwordOn = true
+                                scope.launch { repo.setPasswordEnabled(true) }
+                            } else {
+                                onOpenPasswordSetup()
+                            }
+                        } else {
+                            verifyDisablePassword = true
+                        }
+                    },
+                )
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Preference(
+                    title = stringResource(R.string.change_password),
+                    subtitle = stringResource(R.string.change_password_by_password),
+                ) { showChangePassword = true }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Preference(
+                    title = stringResource(R.string.view_recovery_key),
+                    subtitle = stringResource(R.string.view_recovery_key_subtitle),
+                ) { showViewRecoveryKey = true }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Preference(
+                    title = stringResource(R.string.reset_recovery_key_title),
+                    subtitle = stringResource(R.string.reset_recovery_key_subtitle),
+                ) { showResetRecoveryKey = true }
+            }
 
             // ---- 存储设置 ----
             GroupTitle(stringResource(R.string.group_storage))
-            SwitchPreference(
-                title = stringResource(R.string.public_dir_backup),
-                subtitle = stringResource(R.string.public_dir_enable_text),
-                checked = publicDirEnabled,
-                onToggle = {
-                    // 切换需密码验证 (若已开启密码).
-                    if (storedHash != null) verifyPublicDir = true
-                    else {
-                        publicDirEnabled = !publicDirEnabled
-                        scope.launch { repo.setPublicDirEnabled(publicDirEnabled) }
-                    }
-                },
-            )
-            Preference(title = stringResource(R.string.public_dir_files)) { onOpenPublicDir() }
+            SettingsCard {
+                SwitchPreference(
+                    title = stringResource(R.string.public_dir_backup),
+                    subtitle = stringResource(R.string.public_dir_enable_text),
+                    checked = publicDirEnabled,
+                    onToggle = {
+                        if (storedHash != null) verifyPublicDir = true
+                        else {
+                            publicDirEnabled = !publicDirEnabled
+                            scope.launch { repo.setPublicDirEnabled(publicDirEnabled) }
+                        }
+                    },
+                )
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Preference(title = stringResource(R.string.public_dir_files)) { onOpenPublicDir() }
+            }
 
             // ---- 外观与语言 ----
             GroupTitle(stringResource(R.string.group_appearance))
-            Preference(
-                title = stringResource(R.string.theme),
-                subtitle = stringResource(
-                    when (themeMode) {
-                        ThemeMode.LIGHT -> R.string.theme_light
-                        ThemeMode.DARK -> R.string.theme_dark
-                    }
-                ),
-            ) { showThemeDialog = true }
-            Preference(
-                title = stringResource(R.string.language),
-                subtitle = stringResource(if (LocaleManager.current(language) == "en") R.string.language_en else R.string.language_zh),
-            ) { showLanguageDialog = true }
+            SettingsCard {
+                Preference(
+                    title = stringResource(R.string.theme),
+                    subtitle = stringResource(
+                        when (themeMode) {
+                            ThemeMode.LIGHT -> R.string.theme_light
+                            ThemeMode.DARK -> R.string.theme_dark
+                        }
+                    ),
+                ) { showThemeDialog = true }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Preference(
+                    title = stringResource(R.string.language),
+                    subtitle = stringResource(if (LocaleManager.current(language) == "en") R.string.language_en else R.string.language_zh),
+                ) { showLanguageDialog = true }
+            }
 
             // ---- 帮助与关于 ----
             GroupTitle(stringResource(R.string.group_help))
-            Preference(title = stringResource(R.string.how_to_use)) { onOpenOnboarding() }
-            Preference(title = stringResource(R.string.privacy_policy)) { showPrivacyPolicy = true }
-            Preference(title = stringResource(R.string.about)) { onOpenAbout() }
+            SettingsCard {
+                Preference(title = stringResource(R.string.how_to_use)) { onOpenOnboarding() }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Preference(title = stringResource(R.string.privacy_policy)) { showPrivacyPolicy = true }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                Preference(title = stringResource(R.string.about)) { onOpenAbout() }
+            }
 
-            Divider()
+            Spacer(Modifier.height(32.dp))
         }
     }
 }
@@ -449,8 +467,28 @@ private fun GroupTitle(text: String) {
         text = text,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 10.dp),
     )
+}
+
+/** 圆角卡片容器, 承载一组设置项. */
+@Composable
+private fun SettingsCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 4.dp),
+            content = content,
+        )
+    }
 }
 
 @Composable
@@ -460,22 +498,33 @@ private fun Preference(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-        )
-        if (subtitle != null) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                )
+            }
+        }
+        if (enabled) {
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }

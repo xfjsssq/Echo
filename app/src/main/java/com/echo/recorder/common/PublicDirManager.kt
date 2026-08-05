@@ -82,7 +82,7 @@ object PublicDirManager {
                 val projection = arrayOf(MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads._ID)
                 context.contentResolver.query(
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection,
-                    "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?", arrayOf("%$DIR_NAME"), null,
+                    "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?", arrayOf("%$DIR_NAME/%"), null,
                 )?.use { c ->
                     val nameIdx = c.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
                     while (c.moveToNext()) {

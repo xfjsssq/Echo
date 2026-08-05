@@ -24,6 +24,9 @@
     <string name="record_list">Recordings</string>
     <string name="settings">Settings</string>
     <string name="mic_permission_needed">Microphone permission is required to record</string>
+    <string name="mic_permission_needed_short">Microphone permission needed</string>
+    <string name="ready_tap_to_start">Ready · Tap to start</string>
+    <string name="start_recording">Start recording</string>
     <string name="exit_stop_recording">Exit &amp; stop recording</string>
     <string name="exit_confirm_title">Are you sure you want to exit?</string>
     <string name="exit_confirm_text">Unsaved recordings will be discarded.</string>
@@ -46,7 +49,10 @@
     <!-- List screen -->
     <string name="temporary_recordings">Temporary</string>
     <string name="longterm_recordings">Long-term</string>
+    <string name="temp_auto_delete_hint">Temporary recordings auto-delete after 24h — move to Long-term to keep them</string>
     <string name="no_recordings">No recordings</string>
+    <string name="empty_temporary_hint">Tap the big button to start recording; audio is kept in temporary recordings</string>
+    <string name="empty_longterm_hint">Archive temporary recordings here for long-term storage</string>
     <!-- Calendar weekday headers. -->
     <string name="weekday_sun">Sun</string>
     <string name="weekday_mon">Mon</string>
@@ -91,6 +97,8 @@
     <string name="buffer_seconds_unit">s</string>
     <string name="buffer_minutes_unit">min</string>
     <string name="buffer_duration_label">%1$s (%2$s)</string>
+    <!-- Estimated size prefix. -->
+    <string name="approx_prefix">~</string>
 
     <!-- Notification bar IDLE state text. -->
     <string name="notify_idle_text">Echo is ready for your command</string>

@@ -63,8 +63,9 @@ class RecordViewModel(
         }
     }
 
-    /** Activity 在服务绑定后注入服务. */
+    /** Activity 在服务绑定后注入服务. 幂等: 同一实例重复注入不重复订阅. */
     fun setRecorder(recorder: RecordingService) {
+        if (service === recorder) return
         service = recorder
         viewModelScope.launch {
             recorder.phase.collect { p -> _state.value = _state.value.copy(phase = p) }

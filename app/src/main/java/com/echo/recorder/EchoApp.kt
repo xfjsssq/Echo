@@ -7,7 +7,6 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -22,7 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import com.echo.recorder.ui.theme.ThemeManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.i18n.LocaleManager
@@ -111,18 +110,22 @@ fun EchoApp(
                 }
             })
             1 -> PrivacyAgreementScreen(onAgree = { step = 2 })
-            2 -> OnboardingScreen(
-                onFinish = {
-                    scope.launch { settings.setOnboardingDone(true) }
-                    step = 3
-                },
-                onEnablePublicDir = {
-                    scope.launch { settings.setPublicDirEnabled(true) }
-                },
-                // 主题切换: 仅更新 Compose 状态 + 持久化, 不重建 Activity, 避免打断引导流程.
-                themeMode = themeMode,
-                onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
-            )
+            2 -> {
+                OnboardingScreen(
+                    onFinish = {
+                        scope.launch { settings.setOnboardingDone(true) }
+                        step = 3
+                    },
+                    onEnablePublicDir = {
+                        scope.launch { settings.setPublicDirEnabled(true) }
+                    },
+                    // 主题切换: 仅更新 Compose 状态 + 持久化, 不重建 Activity, 不打断引导流程.
+                    // 注意: 这里不能再用 key(themeMode) 包裹 — 那会让整个引导组合被销毁重建,
+                    // 索引归零导致"选完主题重新开始引导".
+                    themeMode = themeMode,
+                    onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
+                )
+            }
             3 -> {
                 // 引导完成, 进入主界面前先请求权限.
                 LaunchedEffect(Unit) {
@@ -137,9 +140,16 @@ fun EchoApp(
 
     // 冷启动 + 主动锁定统一锁屏入口.
     // 条件: 密码已启用 且 (冷启动未解锁 或 主动锁定).
-    if (passwordEnabled && !SessionAuth.isUnlocked) {
+    val isUnlocked by SessionAuth.isUnlocked.collectAsStateWithLifecycle()
+    if (passwordEnabled && !isUnlocked) {
         val storedHash by produceState<String?>(initialValue = null) {
             value = settings.passwordHash.first()
+        }
+        // 等待 DataStore 加载完成; 密码启用时必有哈希, null 表示仍在加载中,
+        // 避免被 LockScreen 误判为"未设密码"而自动放行.
+        if (storedHash == null) {
+            Surface(modifier = Modifier.fillMaxSize()) {}
+            return
         }
         val recoveryHash by produceState<String?>(initialValue = null) {
             value = settings.recoveryHash.first()
@@ -153,7 +163,15 @@ fun EchoApp(
                 recoveryHash = recoveryHash,
                 isPattern = isPattern,
                 onUnlocked = {
-                    SessionAuth.isUnlocked = true
+                    SessionAuth.unlock()
+                },
+                onResetPassword = {
+                    scope.launch {
+                        settings.setPassword(null)
+                        settings.setPasswordEnabled(false)
+                        settings.setPasswordType(null)
+                    }
+                    SessionAuth.unlock()
                 },
             )
         }

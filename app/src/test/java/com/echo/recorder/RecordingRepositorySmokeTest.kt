@@ -28,6 +28,24 @@ private class FakeDataSource(
         mutable.value = mutable.value.filterNot { it.id == id }
         return mutable.value.size < before
     }
+
+    override fun deleteExpiredTemporary(maxAgeMs: Long): Int {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        val expired = mutable.value.filter {
+            it.category == com.echo.recorder.domain.model.RecordingCategory.TEMPORARY && it.createdAt < cutoff
+        }
+        if (expired.isEmpty()) return 0
+        val ids = expired.map { it.id }.toSet()
+        mutable.value = mutable.value.filterNot { it.id in ids }
+        return expired.size
+    }
+
+    override fun setCategory(id: String, category: com.echo.recorder.domain.model.RecordingCategory): Recording? {
+        val target = mutable.value.firstOrNull { it.id == id } ?: return null
+        val updated = target.copy(category = category)
+        mutable.value = mutable.value.map { if (it.id == id) updated else it }
+        return updated
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

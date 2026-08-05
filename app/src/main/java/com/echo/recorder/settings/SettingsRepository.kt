@@ -30,8 +30,7 @@ enum class BufferDuration(val seconds: Int) {
     /** 本地化预估大小, 如 "约 0.3 MB" / "~0.3 MB". */
     fun estimatedMb(context: Context): String {
         val mb = seconds * 30.0 / 1024.0
-        val approx = if (context.resources.configuration.locales.get(0)?.language == "en") "~" else "约"
-        return "$approx%.1f MB".format(mb)
+        return "${context.getString(R.string.approx_prefix)}%.1f MB".format(mb)
     }
 }
 

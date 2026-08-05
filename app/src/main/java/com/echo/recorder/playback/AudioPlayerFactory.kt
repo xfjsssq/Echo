@@ -9,7 +9,7 @@ interface AudioPlayerFactory {
 }
 
 class DefaultAudioPlayerFactory(
-    private val adapterFactory: () -> MediaPlayerAdapter = ::AndroidMediaPlayerAdapter,
+    private val adapterFactory: () -> MediaPlayerAdapter = { AndroidMediaPlayerAdapter(com.echo.recorder.appContext()) },
 ) : AudioPlayerFactory {
     override fun create(): AudioPlayer = AudioPlayer(adapterFactory())
 }

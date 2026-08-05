@@ -5,21 +5,30 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,8 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -65,6 +78,13 @@ private val CARDS = listOf(
     OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding5_title, R.string.onboarding5_text),
     OnboardingCard(OnboardingCardType.THEME, R.string.onboarding6_title, R.string.onboarding6_text),
 )
+
+/** 卡片类型 → 展示图标. */
+private fun cardIcon(type: OnboardingCardType): ImageVector = when (type) {
+    OnboardingCardType.PLAIN -> Icons.Filled.Mic
+    OnboardingCardType.PUBLIC_DIR -> Icons.Filled.CloudUpload
+    OnboardingCardType.THEME -> Icons.Filled.Palette
+}
 
 /**
  * 首次启动引导卡片 (居中卡片样式, 半透明遮罩).
@@ -114,10 +134,7 @@ fun OnboardingScreen(
                 ) {
                     IconButton(
                         onClick = onFinish,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
                             Icons.Filled.Close,
@@ -127,20 +144,56 @@ fun OnboardingScreen(
                     }
                 }
 
-                // 图片占位区 (后期替换为截图).
+                // 每个卡片的图标徽章 (渐变背景 + 大图标), 呼应猫咪图标风格.
+                val icon: ImageVector = cardIcon(card.type)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    MaterialTheme.colorScheme.secondaryContainer,
+                                )
+                            )
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "${index + 1} / ${CARDS.size}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        modifier = Modifier.size(104.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                icon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(52.dp),
+                            )
+                        }
+                    }
+                }
+
+                // 页面指示圆点.
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    repeat(CARDS.size) { i ->
+                        Box(
+                            modifier = Modifier
+                                .size(if (i == index) 8.dp else 6.dp)
+                                .background(
+                                    if (i == index) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                    CircleShape,
+                                ),
+                        )
+                    }
                 }
 
                 // 内容区.
@@ -150,6 +203,7 @@ fun OnboardingScreen(
                         textRes = card.textRes,
                         selected = themeMode,
                         onSelect = onThemeChange,
+                        onFinish = onFinish,
                     )
                     else -> PlainCardContent(
                         card = card,
@@ -194,6 +248,7 @@ private fun PlainCardContent(
     Text(
         stringResource(card.titleRes),
         style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface,
         textAlign = TextAlign.Center,
         modifier = Modifier.padding(top = 24.dp),
     )
@@ -220,10 +275,12 @@ private fun ThemeCardContent(
     textRes: Int,
     selected: ThemeMode,
     onSelect: (ThemeMode) -> Unit,
+    onFinish: () -> Unit,
 ) {
     Text(
         stringResource(titleRes),
         style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface,
         textAlign = TextAlign.Center,
         modifier = Modifier.padding(top = 24.dp),
     )
@@ -241,7 +298,11 @@ private fun ThemeCardContent(
                     .fillMaxWidth()
                     .selectable(
                         selected = selected == mode,
-                        onClick = { onSelect(mode) },
+                        onClick = {
+                            onSelect(mode)
+                            // 用户需求: 选完主题直接结束引导, 不用再点"开始使用"
+                            onFinish()
+                        },
                         role = Role.RadioButton,
                     )
                     .padding(vertical = 8.dp),
@@ -255,6 +316,7 @@ private fun ThemeCardContent(
                             ThemeMode.DARK -> R.string.theme_dark
                         }
                     ),
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 12.dp),
                 )
             }

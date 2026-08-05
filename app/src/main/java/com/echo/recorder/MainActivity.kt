@@ -44,6 +44,20 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 启动时按保存的语言包装 base context.
+     *
+     * 与 [applyOverrideConfiguration] 双保险: 部分机型/场景下 applyOverrideConfiguration
+     * 的 Configuration 不会传入 Compose 的 stringResource(), 而 attachBaseContext 包装
+     * 直接改写 Activity 的 Resources, 两者叠加后英文模式全 UI 生效 (含引导页/设置页).
+     */
+    override fun attachBaseContext(newBase: Context) {
+        val language = runBlocking {
+            runCatching { SettingsRepository(newBase).language.first() }.getOrNull()
+        }
+        super.attachBaseContext(LocaleManager.wrap(newBase, language))
+    }
+
+    /**
      * 应用目标语言到 Activity 自身的 resources.
      *
      * 这是 Compose stringResource() 感知语言切换的关键: 必须通过 applyOverrideConfiguration

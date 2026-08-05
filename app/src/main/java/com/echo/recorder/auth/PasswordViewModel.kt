@@ -46,7 +46,7 @@ class PasswordViewModel(private val repo: SettingsRepository) : ViewModel() {
     /** 解锁. */
     fun unlock() {
         _isLocked.value = false
-        SessionAuth.isUnlocked = true
+        SessionAuth.unlock()
     }
 
     /**

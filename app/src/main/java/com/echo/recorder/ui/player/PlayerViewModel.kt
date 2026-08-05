@@ -8,7 +8,9 @@ import com.echo.recorder.playback.AudioPlayerFactory
 import com.echo.recorder.playback.AudioPlayerState
 import com.echo.recorder.playback.DefaultAudioPlayerFactory
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,18 +33,22 @@ data class PlayerUiState(
 class PlayerViewModel(
     private val factory: AudioPlayerFactory = DefaultAudioPlayerFactory(),
     private val recordings: () -> List<Recording>,
-    scope: CoroutineScope = CoroutineScope(SupervisorJob()),
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : ViewModel() {
 
     private val player: AudioPlayer = factory.create()
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
+    /** 收集协程所在 scope; 由本 VM 持有引用, onCleared 时取消防止泄漏. */
+    private val collectScope = scope
+
     private var current: Recording? = null
 
     init {
         // 把底层 player 状态映射到 UI 状态.
-        scope.launch {
+        // 默认 scope 由本 VM 持有, onCleared 时一并取消, 防止 collect 协程泄漏.
+        collectScope.launch {
             player.stateFlow.collect { s -> _state.value = s.toUi(current?.displayName ?: "") }
         }
     }
@@ -73,6 +79,8 @@ class PlayerViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        // 取消收集协程后再释放播放器, 防止 StateFlow 更新写入已销毁的 VM.
+        collectScope.cancel()
         player.release()
     }
 }

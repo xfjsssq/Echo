@@ -61,6 +61,15 @@ class RecordingService : Service() {
     private var lastTextIndex: Int = -1
     private var languageJob: Job? = null
 
+    /** 当前语言代码 ("zh"/"en"), 由 [observeLanguage] 维护. */
+    private var currentLanguage: String = LocaleManager.ZH
+
+    /**
+     * 通知轮换文案缓存 (随语言更新).
+     * 避免 [randomBufferingText] 每 4 秒 runBlocking 读 DataStore 阻塞 IO 线程.
+     */
+    private var bufferingTextsCache: List<String> = emptyList()
+
     private val _phase = MutableStateFlow(Phase.IDLE)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
 
@@ -88,25 +97,8 @@ class RecordingService : Service() {
         const val ACTION_KILL = "com.echo.recorder.action.KILL"
 
         /**
-         * 根据当前语言获取通知栏轮换文案数组.
-         *
-         * 服务没有 Compose 上下文, 直接读 DataStore 语言设置后选择对应资源.
-         * 中文: R.array.notify_texts_zh, 英文: R.array.notify_texts_en.
+         * 低于此时长(ms)的缓冲视为空片段, 不创建文件.
          */
-        fun bufferingTexts(context: Context): List<String> {
-            val language = runBlocking {
-                try {
-                    SettingsRepository(context).language.first()
-                } catch (_: Throwable) {
-                    null
-                }
-            }
-            val resId = if (language == "en") R.array.notify_texts_en else R.array.notify_texts_zh
-            return runCatching { context.resources.getStringArray(resId).toList() }
-                .getOrDefault(listOf("Echo"))
-        }
-
-        /** 低于此时长(ms)的缓冲视为空片段, 不创建文件. */
         const val MIN_SAVE_DURATION_MS = 1000L
     }
     override fun onBind(intent: Intent?): IBinder = binder
@@ -114,7 +106,17 @@ class RecordingService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        bufferSeconds = readBufferSeconds()
+        // 一次同步读取设置 (DataStore 首读), 之后全部走缓存, 不在主线程重复阻塞.
+        val settings = SettingsRepository(this)
+        val initial = runBlocking {
+            val sec = settings.bufferSeconds.first()
+            val lang = settings.language.first()
+            sec to lang
+        }
+        bufferSeconds = initial.first
+        currentLanguage = LocaleManager.current(initial.second)
+        localizedContext = LocaleManager.wrap(this, currentLanguage)
+        refreshBufferingTextCache()
         startForeground(NOTIFICATION_ID, buildNotification())
         // 监听语言变化, 变化时立即重建通知以切换文案语言.
         observeLanguage()
@@ -131,23 +133,26 @@ class RecordingService : Service() {
         languageJob?.cancel()
         languageJob = scope.launch {
             SettingsRepository(this@RecordingService).language.collect { language ->
+                currentLanguage = LocaleManager.current(language)
                 // 重建本地化 Context, 使后续 getString 读取目标语言.
-                localizedContext = LocaleManager.wrap(this@RecordingService, language)
+                localizedContext = LocaleManager.wrap(this@RecordingService, currentLanguage)
+                // 同步刷新轮换文案缓存, 避免轮换时再阻塞读 DataStore.
+                refreshBufferingTextCache()
                 // 语言切换后重建通知, 使文案立即切换.
                 rebuildNotification()
             }
         }
     }
 
-    private fun repo(): RecordingRepository = ServiceLocator.repository(this)
-
-    private fun readBufferSeconds(): Int = runBlocking {
-        try {
-            SettingsRepository(this@RecordingService).bufferSeconds.first()
-        } catch (_: Throwable) {
-            DEFAULT_BUFFER_SECONDS
-        }
+    /** 按当前语言读取通知轮换文案数组并缓存. */
+    private fun refreshBufferingTextCache() {
+        val resId = if (currentLanguage == LocaleManager.EN) R.array.notify_texts_en else R.array.notify_texts_zh
+        bufferingTextsCache = runCatching {
+            localizedContext.resources.getStringArray(resId).toList()
+        }.getOrDefault(listOf("Echo"))
     }
+
+    private fun repo(): RecordingRepository = ServiceLocator.repository(this)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -165,7 +170,9 @@ class RecordingService : Service() {
                 handleRestart(savePending)
             }
             ACTION_KILL -> {
-                buffer?.releaseTo(File(unprocessedDir(this), "kill_${System.currentTimeMillis()}.m4a"))
+                runBlocking(Dispatchers.IO) {
+                    buffer?.releaseTo(File(unprocessedDir(this@RecordingService), "kill_${System.currentTimeMillis()}.m4a"))
+                }
                 buffer = null
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -180,11 +187,11 @@ class RecordingService : Service() {
 
     fun startBuffer() {
         if (_phase.value == Phase.BUFFERING) return
-        bufferSeconds = readBufferSeconds()
         val cb = CircularBuffer(this).also { it.setBufferSeconds(bufferSeconds) }
-        cb.start()
-        buffer = cb
+        // 先置状态再创建, 防止连点重复创建 CircularBuffer.
         _phase.value = Phase.BUFFERING
+        buffer = cb
+        cb.start()
         startRotate()
         rebuildNotification()
     }
@@ -194,13 +201,16 @@ class RecordingService : Service() {
         val cb = buffer ?: return
         if (_saving.value) return
         _saving.value = true
+        // 立即更新通知显示"正在保存", 不等协程启动.
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        mgr.notify(NOTIFICATION_ID, buildNotification())
         scope.launch {
             try {
                 val dest = File(pendingDir(this@RecordingService), "echo_${System.currentTimeMillis()}.m4a")
                 val dur = cb.save(dest)
                 // 有效时长不足 1 秒则不创建文件 (避免产生 0 秒空片段).
                 if (dur >= MIN_SAVE_DURATION_MS) {
-                    runBlocking { repo().create(dest, dur) }
+                    repo().create(dest, dur)
                 } else {
                     runCatching { if (dest.exists()) dest.delete() }
                 }
@@ -222,15 +232,15 @@ class RecordingService : Service() {
 
     fun deletePending() {
         if (_phase.value != Phase.REVIEW) return
-        runBlocking {
+        scope.launch {
             val latest = repo().getAll().first()
                 .firstOrNull { it.category == RecordingCategory.TEMPORARY }
             if (latest != null) runCatching { repo().delete(latest.id) }
+            buffer?.discard()
+            _phase.value = Phase.BUFFERING
+            startRotate()
+            rebuildNotification()
         }
-        buffer?.discard()
-        _phase.value = Phase.BUFFERING
-        startRotate()
-        rebuildNotification()
     }
 
     private fun handleRestart(savePending: Boolean) {
@@ -241,11 +251,14 @@ class RecordingService : Service() {
             rebuildNotification()
             val dest = File(pendingDir(this), "echo_${System.currentTimeMillis()}.m4a")
             // 同步等待保存完成后再重启, 避免 exitProcess 强杀导致 0 秒文件.
-            val dur = cb.save(dest)
-            if (dur > 0L) runBlocking { repo().create(dest, dur) }
+            // 拼接/登记等重活放 IO 线程, 主线程只等待, 不亲自执行.
+            val dur = runBlocking(Dispatchers.IO) { cb.save(dest) }
+            if (dur >= MIN_SAVE_DURATION_MS) {
+                runBlocking(Dispatchers.IO) { repo().create(dest, dur) }
+            }
             _saving.value = false
         } else {
-            cb?.discard()
+            runBlocking(Dispatchers.IO) { cb?.discard() }
         }
         stopRotate()
         _phase.value = Phase.IDLE
@@ -294,7 +307,8 @@ class RecordingService : Service() {
             _phase.value == Phase.REVIEW -> str(R.string.notification_review_title)
             else -> lastRotatedText
         }
-        startForeground(NOTIFICATION_ID, buildNotification(text))
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        mgr.notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     private var lastRotatedText: String = ""
@@ -318,8 +332,10 @@ class RecordingService : Service() {
     }
 
     private fun randomBufferingText(): String {
-        val list = bufferingTexts(this)
-        if (list.size <= 1) return list.first().also { lastRotatedText = it }
+        val list = bufferingTextsCache
+        if (list.size <= 1) {
+            return (list.firstOrNull() ?: "Echo").also { lastRotatedText = it }
+        }
         var idx = (Math.random() * list.size).toInt()
         if (idx == lastTextIndex) idx = (idx + 1) % list.size
         lastTextIndex = idx
@@ -413,12 +429,13 @@ class RecordingService : Service() {
     private fun saveUnprocessed() {
         val cb = buffer ?: return
         val dest = File(unprocessedDir(this), "recording_emergency_${System.currentTimeMillis()}.m4a")
-        val dur: Long = cb.releaseTo(dest)
-        if (dur < MIN_SAVE_DURATION_MS) {
-            runCatching { if (dest.exists()) dest.delete() }
-            return
-        }
-        runBlocking {
+        // 拼接 + 登记等重活放 IO 线程, 主线程同步等待, 保证进程被杀前完成落盘.
+        runBlocking(Dispatchers.IO) {
+            val dur: Long = cb.releaseTo(dest)
+            if (dur < MIN_SAVE_DURATION_MS) {
+                runCatching { if (dest.exists()) dest.delete() }
+                return@runBlocking
+            }
             val created = repo().create(dest, dur)
             runCatching { repo().setCategory(created.id, RecordingCategory.UNPROCESSED) }
         }
