@@ -2,10 +2,11 @@ package com.echo.recorder.ui.lock
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -13,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -20,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
 import com.echo.recorder.auth.LockoutManager
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 /**
  * 修改密码对话框: 选择通过密码或恢复密钥验证, 验证通过后进入 [PasswordSetupScreen] 设置新密码.
  * 修改密码不会变更恢复密钥.
+ * 密码类型 (pin/mixed) 由本组件从 DataStore 自行读取.
  */
 @Composable
 fun ChangePasswordDialog(
@@ -42,6 +44,9 @@ fun ChangePasswordDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { SettingsRepository(context) }
+    val passwordType by produceState<String?>(initialValue = null) {
+        value = repo.passwordType.first()
+    }
 
     // 0=选方式 1=验证密码 2=验证密钥
     var step by remember { mutableIntStateOf(0) }
@@ -59,6 +64,21 @@ fun ChangePasswordDialog(
     if (lockSeconds > 0) {
         LockoutDialog(lockSeconds = lockSeconds, onDismiss = onDismiss)
         return
+    }
+
+    // 验证当前密码 (根据实际类型校验输入).
+    val submitPassword: () -> Unit = {
+        scope.launch {
+            val stored = repo.passwordHash.first()
+            if (stored != null && PasswordCrypto.verify(input, stored)) {
+                LockoutManager.recordSuccess()
+                onVerified()
+            } else {
+                error = context.getString(R.string.password_wrong)
+                LockoutManager.recordFailure()
+                lockSeconds = LockoutManager.remainingSeconds().toInt()
+            }
+        }
     }
 
     when (step) {
@@ -87,33 +107,30 @@ fun ChangePasswordDialog(
             title = { Text(stringResource(R.string.verify_current_password)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { v: String -> input = v.filter { c -> c.isDigit() }.take(6); error = null },
-                        label = { Text(stringResource(R.string.pin_input_hint)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (passwordType == "mixed") {
+                        MixedPasswordInput(
+                            value = input,
+                            onValueChange = { input = it; error = null },
+                            label = stringResource(R.string.mixed_input_hint),
+                            onImeAction = submitPassword,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Button(onClick = submitPassword) { Text(stringResource(R.string.confirm)) }
+                    } else {
+                        PasswordInputField(
+                            value = input,
+                            onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); error = null },
+                            label = stringResource(R.string.pin_input_hint),
+                            keyboardType = KeyboardType.Number,
+                            onImeAction = submitPassword,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Button(onClick = submitPassword) { Text(stringResource(R.string.confirm)) }
+                    }
                     error?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        val stored = repo.passwordHash.first()
-                        if (stored != null && PasswordCrypto.verify(input, stored)) {
-                            LockoutManager.recordSuccess()
-                            onVerified()
-                        } else {
-                            error = "password_wrong"
-                            LockoutManager.recordFailure()
-                            lockSeconds = LockoutManager.remainingSeconds().toInt()
-                        }
-                    }
-                }) { Text(stringResource(R.string.confirm)) }
-            },
+            confirmButton = {},
             dismissButton = {
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             },
@@ -123,14 +140,10 @@ fun ChangePasswordDialog(
             title = { Text(stringResource(R.string.verify_current_recovery)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+                    RecoveryKeyInput(
                         value = input,
-                        onValueChange = { v: String -> input = v.filter { c -> c.isDigit() }.take(6); error = null },
-                        label = { Text(stringResource(R.string.recovery_key_title)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        onValueChange = { input = it; error = null },
+                        label = stringResource(R.string.recovery_key_title),
                     )
                     error?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
                 }
@@ -143,7 +156,7 @@ fun ChangePasswordDialog(
                             LockoutManager.recordSuccess()
                             onVerified()
                         } else {
-                            error = "recovery_key_wrong"
+                            error = context.getString(R.string.recovery_key_wrong)
                             LockoutManager.recordFailure()
                             lockSeconds = LockoutManager.remainingSeconds().toInt()
                         }
@@ -195,14 +208,10 @@ fun ResetRecoveryKeyDialog(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.reset_recovery_key_subtitle))
-                    OutlinedTextField(
+                    RecoveryKeyInput(
                         value = input,
-                        onValueChange = { v: String -> input = v.filter { c -> c.isDigit() }.take(6); error = null },
-                        label = { Text(stringResource(R.string.recovery_key_title)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        onValueChange = { input = it; error = null },
+                        label = stringResource(R.string.recovery_key_title),
                     )
                     error?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
                 }
@@ -220,7 +229,7 @@ fun ResetRecoveryKeyDialog(
                             newKey = key
                             step = 1
                         } else {
-                            error = "recovery_key_wrong"
+                            error = context.getString(R.string.recovery_key_wrong)
                             LockoutManager.recordFailure()
                             lockSeconds = LockoutManager.remainingSeconds().toInt()
                         }

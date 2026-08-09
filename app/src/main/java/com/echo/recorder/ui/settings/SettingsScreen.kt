@@ -82,12 +82,10 @@ fun SettingsScreen(
     var selected by remember { mutableStateOf(BufferDuration.M3) }
     var passwordOn by remember { mutableStateOf(false) }
     var language by remember { mutableStateOf<String?>(null) }
-    var publicDirEnabled by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         selected = BufferDuration.values().firstOrNull { it.seconds == repo.bufferSeconds.first() } ?: BufferDuration.M3
         passwordOn = repo.passwordEnabled.first()
         language = repo.language.first()
-        publicDirEnabled = repo.publicDirEnabled.first()
     }
 
     var showRestart by remember { mutableStateOf(false) }
@@ -99,8 +97,6 @@ fun SettingsScreen(
     // 主题/语言选择弹窗.
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
-    // 公共目录开关密码验证.
-    var verifyPublicDir by remember { mutableStateOf(false) }
     // 修改密码 / 查看恢复密钥 / 重置恢复密钥 / 关闭密码验证.
     var showChangePassword by remember { mutableStateOf(false) }
     var showViewRecoveryKey by remember { mutableStateOf(false) }
@@ -114,9 +110,6 @@ fun SettingsScreen(
     }
     val recoveryHash by produceState<String?>(initialValue = null) {
         value = repo.recoveryHash.first()
-    }
-    val isPattern by produceState(initialValue = false) {
-        value = repo.passwordType.first() == "pattern"
     }
 
     // 第一确认: 修改缓冲时长需重启.
@@ -252,21 +245,6 @@ fun SettingsScreen(
         )
     }
 
-    // 公共目录开关密码验证.
-    if (verifyPublicDir) {
-        PasswordPromptDialog(
-            storedHash = storedHash,
-            recoveryHash = null,
-            isPattern = isPattern,
-            onVerify = {
-                verifyPublicDir = false
-                publicDirEnabled = !publicDirEnabled
-                scope.launch { repo.setPublicDirEnabled(publicDirEnabled) }
-            },
-            onDismiss = { verifyPublicDir = false },
-        )
-    }
-
     // 修改密码.
     if (showChangePassword) {
         ChangePasswordDialog(
@@ -297,7 +275,6 @@ fun SettingsScreen(
         PasswordPromptDialog(
             storedHash = storedHash,
             recoveryHash = recoveryHash,
-            isPattern = isPattern,
             onVerify = {
                 verifyDisablePassword = false
                 passwordOn = false
@@ -411,20 +388,11 @@ fun SettingsScreen(
             // ---- 存储设置 ----
             GroupTitle(stringResource(R.string.group_storage))
             SettingsCard {
-                SwitchPreference(
-                    title = stringResource(R.string.public_dir_backup),
-                    subtitle = stringResource(R.string.public_dir_enable_text),
-                    checked = publicDirEnabled,
-                    onToggle = {
-                        if (storedHash != null) verifyPublicDir = true
-                        else {
-                            publicDirEnabled = !publicDirEnabled
-                            scope.launch { repo.setPublicDirEnabled(publicDirEnabled) }
-                        }
-                    },
-                )
-                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
-                Preference(title = stringResource(R.string.public_dir_files)) { onOpenPublicDir() }
+                // 公共目录备份永远默认开启, 不再提供开关, 仅保留"公共目录文件"入口.
+                Preference(
+                    title = stringResource(R.string.public_dir_files),
+                    subtitle = stringResource(R.string.public_dir_files_subtitle),
+                ) { onOpenPublicDir() }
             }
 
             // ---- 外观与语言 ----

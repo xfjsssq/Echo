@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -16,32 +16,34 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
 import com.echo.recorder.auth.LockoutManager
 import com.echo.recorder.auth.PasswordVerifier
+import com.echo.recorder.settings.SettingsRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 
 /**
  * 密码验证对话框.
  *
  * @param storedHash 存储的密码哈希 (saltHex:hashHex)
  * @param recoveryHash 存储的恢复密钥哈希, 用于"忘记密码"重置
- * @param isPattern 是否为图案密码
  * @param onVerify 验证成功后回调
  * @param onDismiss 取消回调
+ * 密码类型 (pin/mixed) 由本组件从 DataStore 自行读取, 调用方无需关心.
+ * 图案密码已彻底移除.
  */
 @Composable
 fun PasswordPromptDialog(
     storedHash: String?,
     recoveryHash: String?,
-    isPattern: Boolean,
     onVerify: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -49,6 +51,12 @@ fun PasswordPromptDialog(
     if (storedHash == null) {
         LaunchedEffect(Unit) { onVerify() }
         return
+    }
+
+    val context = LocalContext.current
+    val repo = remember { SettingsRepository(context) }
+    val passwordType by produceState<String?>(initialValue = null) {
+        value = repo.passwordType.first()
     }
 
     var error by remember { mutableStateOf(false) }
@@ -85,19 +93,15 @@ fun PasswordPromptDialog(
             title = { Text(stringResource(R.string.reset_password_with_recovery)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+                    RecoveryKeyInput(
                         value = recoveryInput,
-                        onValueChange = { recoveryInput = it.filter { c -> c.isDigit() }.take(6); error = false },
-                        label = { Text(stringResource(R.string.recovery_key_title)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        onValueChange = { recoveryInput = it; error = false },
+                        label = stringResource(R.string.recovery_key_title),
                     )
                     if (error) {
                         Text(
                             stringResource(R.string.recovery_key_wrong),
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -128,92 +132,74 @@ fun PasswordPromptDialog(
         return
     }
 
-    if (isPattern) {
-        var pattern by remember { mutableStateOf<List<Int>>(emptyList()) }
-        var patternResetKey by remember { mutableIntStateOf(0) }
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(stringResource(R.string.input_password)) },
-            text = {
-                Column {
-                    PatternLockView(
-                        resetKey = patternResetKey,
-                        onPatternComplete = { p ->
-                            when (PasswordVerifier.verifyPassword(p.joinToString(","), storedHash)) {
+    var input by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.input_password)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (passwordType == "mixed") {
+                    // 扩展密码: 输入 + 确认按钮.
+                    MixedPasswordInput(
+                        value = input,
+                        onValueChange = { input = it; error = false },
+                        label = stringResource(R.string.mixed_input_hint),
+                        onImeAction = {
+                            when (PasswordVerifier.verifyPassword(input, storedHash)) {
                                 PasswordVerifier.Result.Success -> onVerify()
                                 PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
                                 PasswordVerifier.Result.Wrong -> {
                                     error = true
-                                    pattern = emptyList()
-                                    patternResetKey++
                                     lockSeconds = LockoutManager.remainingSeconds().toInt()
                                 }
                                 else -> { /* sealed 已穷尽 */ }
                             }
                         },
                     )
-                    if (error) {
-                        Text(
-                            stringResource(R.string.password_wrong),
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
-                    TextButton(onClick = { showRecovery = true }) {
-                        Text(stringResource(R.string.forgot_password))
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-            },
-        )
-    } else {
-        var input by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(stringResource(R.string.input_password)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); error = false },
-                        label = { Text(stringResource(R.string.pin_input_hint)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (error) {
-                        Text(
-                            stringResource(R.string.password_wrong),
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    TextButton(onClick = { showRecovery = true }) {
-                        Text(stringResource(R.string.forgot_password))
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    when (PasswordVerifier.verifyPassword(input, storedHash)) {
-                        PasswordVerifier.Result.Success -> onVerify()
-                        PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
-                        PasswordVerifier.Result.Wrong -> {
-                            error = true
-                            lockSeconds = LockoutManager.remainingSeconds().toInt()
+                    Spacer(Modifier.height(4.dp))
+                    Button(onClick = {
+                        when (PasswordVerifier.verifyPassword(input, storedHash)) {
+                            PasswordVerifier.Result.Success -> onVerify()
+                            PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
+                            PasswordVerifier.Result.Wrong -> {
+                                error = true
+                                lockSeconds = LockoutManager.remainingSeconds().toInt()
+                            }
+                            else -> { /* sealed 已穷尽 */ }
                         }
-                        else -> { /* sealed 已穷尽 */ }
-                    }
-                }) { Text(stringResource(R.string.confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-            },
-        )
-    }
+                    }) { Text(stringResource(R.string.confirm)) }
+                } else {
+                    // PIN: 6 位数字, 输满自动验证.
+                    PinInput(
+                        onComplete = { pin ->
+                            when (PasswordVerifier.verifyPassword(pin, storedHash)) {
+                                PasswordVerifier.Result.Success -> onVerify()
+                                PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
+                                PasswordVerifier.Result.Wrong -> {
+                                    error = true
+                                    lockSeconds = LockoutManager.remainingSeconds().toInt()
+                                }
+                                else -> { /* sealed 已穷尽 */ }
+                            }
+                        },
+                    )
+                }
+                if (error) {
+                    Text(
+                        stringResource(R.string.password_wrong),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                TextButton(onClick = { showRecovery = true }) {
+                    Text(stringResource(R.string.forgot_password))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 /** 锁定倒计时对话框. */

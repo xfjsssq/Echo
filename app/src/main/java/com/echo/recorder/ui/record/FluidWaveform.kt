@@ -13,38 +13,36 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.luminance
-import kotlin.math.PI
+import androidx.compose.ui.graphics.toArgb
 import kotlin.math.abs
-import kotlin.math.sin
+import kotlin.math.exp
+import kotlin.math.floor
+import kotlin.math.pow
 import kotlin.random.Random
 
 /**
- * Gemini Live 风格音频能量幕 (V8 — 涟漪正弦柱状图).
+ * Gemini Live 风格音频能量幕 (V13 — 三峰独立随机游走 + 对比度响应).
  *
- * 依据头脑风暴建议重写 (相比 V7 极光柔幕):
- * 1. **合成涟漪波为主, 音频只调制能量** — 用 (1+sin(x))/2 合成单自然波峰,
- *    永远有起伏: 安静时也有波峰波谷灵动流动, 说话时只是整体更饱满 + 中心脉冲,
- *    不再是"全低都下去、全高都上来"的规矩跟随. 双波对向传播形成干涉涟漪,
- *    打破匀速规律感.
- * 2. **20~30 根圆角柱, 左右对称** — 22 根, 相位左半随机右半镜像, 中心高两侧低
- *    的山丘包络, 柱顶透明渐变到底部实色发光, 带柔和光晕.
- * 3. **颜色突出** — 明亮主题与背景混色只取 15%, 底部 alpha 0.88, 橙色鲜明;
- *    暗黑主题混 45% 保持柔和.
- * 4. **快攻慢放缓动** — 每根柱子独立向目标逼近, 液体拖尾感.
- * 5. **噪点质感** — 波形区域叠加固定 seed 白色颗粒, 边缘过渡平滑不塑料.
- * 6. **白 → 主题色过渡** — reveal 0→1 时高度从 0 升起, 颜色先白后主题色.
+ * 从第一性原理重构 (不再调参):
+ * 1. **形态层 / 能量层彻底解耦** — 形态由 3 个高斯峰的幅度/宽度/位置
+ *    独立随机游走驱动 (互不相关、永不重复, 严格 ≤3 波峰); 音频只通过
+ *    "对比度"通道影响形态, 不直接推顶点 → 架构上杜绝齐上齐下.
+ * 2. **动态中间值对称拉伸** — 每帧算当前高度中位数, 围绕它对称拉伸:
+ *    峰更高、谷更低, 中间值本身不动 → 高者上冲低者下压, 差距夸张.
+ * 3. **快攻快放 + 灵敏度压缩** — 包络 attack 0.75 / release 0.50,
+ *    振幅 ^0.6 压缩 → 小音量灵敏、大音量不炸, 响应即时不慵懒.
+ * 4. **静止灵动** — env=0 时形态本身持续演化, 微呼吸不呆板.
+ * 5. 保留: 光源泛光、顶部无分界线、左右填满、噪点、reveal、颜色混比.
  *
  * @param amplitude 实时感知振幅 0.0-1.0
  * @param waveColor 波形主色 (推荐主题 primary)
@@ -59,27 +57,11 @@ fun FluidWaveform(
     backgroundColor: Color = Color.White,
     modifier: Modifier = Modifier,
 ) {
-    // 柱子数量: 20~30 区间取 22, 左右对称
+    // 22 个顶点 = 三峰平滑轮廓的采样点 (曲线穿过全部顶点, 全宽铺满)
     val N = 22
 
-    // 每根柱子的当前相对高度 (跨帧缓动 → 液体拖尾)
+    // 每个顶点的当前相对高度 (跨帧缓动 → 液体拖尾)
     val heights = remember { FloatArray(N) { 0f } }
-    // 镜像相位: 左半随机, 右半对称 → 左右对称又不齐整的灵动涟漪
-    val phases = remember {
-        val a = FloatArray(N) { Random.nextFloat() * 2f * PI.toFloat() }
-        for (i in 0 until N) {
-            val mirror = N - 1 - i
-            if (mirror > i) a[mirror] = a[i]
-        }
-        a
-    }
-    // 静态有机基形 (对称微扰): 让柱子高度不齐整, 有生命力
-    val baseShape = remember {
-        FloatArray(N) { i ->
-            val xa = abs((i / (N - 1f)) * 2f - 1f)
-            1f + 0.05f * sin(xa * 5.2f) + 0.04f * sin(xa * 9.7f + 1.2f)
-        }
-    }
     // 平滑包络 (快攻慢放)
     val smoothAmp = remember { mutableFloatStateOf(0f) }
     var time by remember { mutableFloatStateOf(0f) }
@@ -103,6 +85,10 @@ fun FluidWaveform(
         }
     }
 
+    // 泛光用画刷 (每帧只换 shader, 复用对象避免 GC 抖动)
+    val glowPaint = remember { Paint() }
+    val corePaint = remember { Paint() }
+
     // 始终读取最新参数
     val currentAmplitude by rememberUpdatedState(amplitude)
     val currentReveal by rememberUpdatedState(reveal)
@@ -111,41 +97,58 @@ fun FluidWaveform(
     // 明亮主题: 混色少 → 颜色突出; 暗黑主题: 混色多 → 柔和
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
-    // ── 逐帧更新: 合成涟漪为主, 音频只调制能量 ──
+    // ── 逐帧更新: 三峰形状 + 动态中间值差分音频响应 ──
     LaunchedEffect(Unit) {
         while (true) {
             withFrameNanos { }
             time += 0.028f
 
             val target = currentAmplitude.coerceIn(0f, 1f)
+            // 灵敏度压缩: 小音量放大 (^0.6), 大音量柔和 → 反馈明显但不炸
+            val perceived = target.pow(0.6f)
             val sa = smoothAmp.floatValue
-            smoothAmp.floatValue = if (target > sa) {
-                sa + (target - sa) * 0.50f
+            smoothAmp.floatValue = if (perceived > sa) {
+                sa + (perceived - sa) * 0.75f   // 快攻: 声音一来立刻响应
             } else {
-                sa + (target - sa) * 0.10f
+                sa + (perceived - sa) * 0.50f   // 快放: 一停很快回落
             }
-            val amp = smoothAmp.floatValue
+            val env = smoothAmp.floatValue
+
+            // 从左向右缓慢滚动: 完整一轮约 40 秒 (time*0.024), 慢而持续
+            val scroll = time * 0.024f
+
+            // 三个高斯峰: 幅度/宽度/位置各自独立随机游走 (互不相关、永不重复),
+            // 中心缓慢右移 → 随机感 + 滚动感 + 严格 ≤3 波峰
+            val shape = FloatArray(N)
+            for (i in 0 until N) {
+                val xa = i / (N - 1f) // 0..1, 全宽铺满
+                var s = 0f
+                for (k in 0 until 3) {
+                    val seed = 31 + k * 97
+                    val ampK = 0.45f + 0.40f * valueNoise(seed.toFloat(), time * 0.30f)
+                    val wK = 0.085f + 0.040f * valueNoise(seed + 11f, time * 0.26f)
+                    val cK = scroll + k * 0.335f + 0.07f * valueNoise(seed + 23f, time * 0.20f)
+                    s += ampK * gauss(xa, cK, wK)
+                }
+                shape[i] = s
+            }
+
+            // 动态中间值: 当前帧高度的中位数 (随音高自适应, 非定值)
+            val sorted = shape.copyOf().apply { sort() }
+            val mid = (sorted[N / 2 - 1] + sorted[N / 2]) * 0.5f
+
+            // 对比度响应: 围绕当前中间值对称拉伸 → 峰更高、谷更低;
+            // 中间值本身不动 → 绝不整体平移、绝不齐上齐下
+            val contrast = 1f + 2.8f * env
 
             for (i in 0 until N) {
-                val x = (i / (N - 1f)) * 2f - 1f // -1..1
-                val xa = abs(x)
-                // 中心包络: 中间高两侧低 (山丘主脊)
-                val center = (1f - 0.45f * xa * xa).coerceAtLeast(0.10f)
-                // 合成涟漪 (1+sin)/2 → 单自然波峰; 双波对向传播 → 灵动干涉
-                val wave1 = 0.5f + 0.5f * sin(xa * 3.4f + time * 1.5f + phases[i])
-                val wave2 = 0.5f + 0.5f * sin(xa * 2.1f - time * 2.3f + phases[i] * 1.7f)
-                val ripple = wave1 * 0.60f + wave2 * 0.40f
-                // 音频只调制能量与中心脉冲: 全低时也有波峰, 全高时不整体升平
-                val energy = 0.60f + 0.55f * amp
-                val centerPulse = 1f + 0.30f * amp * (1f - xa).coerceAtLeast(0f)
-                val targetH = ((0.30f + 0.70f * ripple) * center * baseShape[i] * energy * centerPulse)
-                    .coerceIn(0.04f, 1.05f)
+                val stretched = mid + (shape[i] - mid) * contrast
+                // 软膝: 顶部渐近无硬线; 底部保底不贴死
+                val kneed = if (stretched > 0.85f) 0.85f + (stretched - 0.85f) * 0.28f else stretched
+                val targetH = kneed.coerceIn(0.02f, 1.25f)
+
                 val cur = heights[i]
-                heights[i] = if (targetH > cur) {
-                    cur + (targetH - cur) * 0.32f // 快攻: 活泼
-                } else {
-                    cur + (targetH - cur) * 0.12f // 慢放: 液体拖尾
-                }
+                heights[i] = cur + (targetH - cur) * 0.45f
             }
         }
     }
@@ -161,60 +164,98 @@ fun FluidWaveform(
         // 与背景混合: 明亮主题少混 → 颜色突出; 暗黑主题多混 → 柔和
         val mix = if (isDark) 0.55f else 0.85f
         val solid = lerp(currentBg, base, mix)
-        val topStop = solid.copy(alpha = if (isDark) 0.08f else 0.12f)
-        val midStop = solid.copy(alpha = if (isDark) 0.28f else 0.50f)
-        val baseStop = solid.copy(alpha = if (isDark) 0.55f else 0.88f)
-        val glowAlpha = if (isDark) 0.08f else 0.12f
 
-        val maxH = h * 0.80f
+        // 渐变上界在可能最高峰之上 → 顶部永远先淡出, 不会露出硬边
+        val maxH = h * 0.56f
+        val gradTop = h - maxH * 1.25f
         val baseY = h // 底边贴容器底部 → 填满底部, 无空隙
-        val step = w / N
-        val barW = step * 0.58f
-        val corner = barW * 0.38f
-        val glowW = barW * 1.8f
+        val step = w / (N - 1f)   // 全宽铺满: 首顶点 x=0, 末顶点 x=w
 
-        for (i in 0 until N) {
-            val hh = maxH * heights[i].coerceIn(0f, 1.05f) * r
-            if (hh < 1f) continue
-            val cx = step * (i + 0.5f)
-            val top = baseY - hh
-
-            // 光晕层: 宽 1.8x 淡色圆角 → 柱子像发光体
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color.Transparent,
-                        1.0f to solid.copy(alpha = glowAlpha * r),
-                    ),
-                    startY = top,
-                    endY = baseY,
-                ),
-                topLeft = Offset(cx - glowW / 2f, top),
-                size = Size(glowW, hh),
-                cornerRadius = CornerRadius(glowW / 2f, glowW / 2f),
-            )
-
-            // 主体: 顶透明 → 底实色 渐变圆角柱
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color.Transparent,
-                        0.45f to topStop.copy(alpha = topStop.alpha * r),
-                        0.75f to midStop.copy(alpha = midStop.alpha * r),
-                        1.0f to baseStop.copy(alpha = baseStop.alpha * r),
-                    ),
-                    startY = top,
-                    endY = baseY,
-                ),
-                topLeft = Offset(cx - barW / 2f, top),
-                size = Size(barW, hh),
-                cornerRadius = CornerRadius(corner, corner),
-            )
+        // 顶点: 覆盖整个宽度, 顶 y 由缓动高度决定
+        val pts = List(N) { i ->
+            val hh = maxH * heights[i].coerceIn(0f, 1.25f) * r
+            Offset(step * i, baseY - hh)
         }
 
-        // 极淡噪点: 增质感, 让渐变过渡更平滑 (保留极光颗粒感)
+        // 连续轮廓: 左缘 → 平滑曲线穿过全部顶点 → 右缘 → 底边闭合
+        // Catmull-Rom → 三次贝塞尔: 顶点间 C1 连续, 曲线圆滑无折角
+        val path = Path()
+        path.moveTo(0f, baseY)
+        path.lineTo(pts[0].x, pts[0].y)
+        for (i in 0 until N - 1) {
+            val p0 = pts[(i - 1).coerceAtLeast(0)]
+            val p1 = pts[i]
+            val p2 = pts[i + 1]
+            val p3 = pts[(i + 2).coerceAtMost(N - 1)]
+            val c1 = Offset(p1.x + (p2.x - p0.x) / 6f, p1.y + (p2.y - p0.y) / 6f)
+            val c2 = Offset(p2.x - (p3.x - p1.x) / 6f, p2.y - (p3.y - p1.y) / 6f)
+            path.cubicTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y)
+        }
+        path.lineTo(w, baseY)
+        path.close()
+
+        // ── 光源式泛光: 波形像发光体, 上方也有光亮 ──
+
+        // 1) 大范围柔光 (强模糊) — 主泛光, 盖掉顶部任何边界
+        glowPaint.shader = android.graphics.LinearGradient(
+            0f, gradTop, 0f, baseY,
+            intArrayOf(
+                Color.Transparent.toArgb(),
+                solid.copy(alpha = 0.30f * r).toArgb(),
+                solid.copy(alpha = 0.45f * r).toArgb(),
+            ),
+            floatArrayOf(0f, 0.5f, 1f),
+            android.graphics.Shader.TileMode.CLAMP,
+        )
+        glowPaint.asFrameworkPaint().maskFilter =
+            android.graphics.BlurMaskFilter(w * 0.050f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+        drawContext.canvas.drawPath(path, glowPaint)
+
+        // 2) 紧凑光芯 (小模糊) — 波形本体有发光感
+        corePaint.shader = android.graphics.LinearGradient(
+            0f, gradTop, 0f, baseY,
+            intArrayOf(
+                Color.Transparent.toArgb(),
+                solid.copy(alpha = 0.22f * r).toArgb(),
+                solid.copy(alpha = 0.50f * r).toArgb(),
+            ),
+            floatArrayOf(0f, 0.6f, 1f),
+            android.graphics.Shader.TileMode.CLAMP,
+        )
+        corePaint.asFrameworkPaint().maskFilter =
+            android.graphics.BlurMaskFilter(w * 0.015f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+        drawContext.canvas.drawPath(path, corePaint)
+
+        // 3) 主体: 清晰渐变填充 — 顶部在最高峰之上淡出, 底部实色
+        drawPath(
+            path = path,
+            brush = Brush.verticalGradient(
+                colorStops = arrayOf(
+                    0.0f to Color.Transparent,
+                    0.28f to solid.copy(alpha = 0.22f * r),
+                    0.70f to solid.copy(alpha = 0.55f * r),
+                    1.0f to solid.copy(alpha = (if (isDark) 0.55f else 0.88f) * r),
+                ),
+                startY = gradTop,
+                endY = baseY,
+            ),
+        )
+
+        // 4) 极淡噪点: 增质感, 让渐变过渡更平滑 (保留极光颗粒感)
         drawContext.canvas.drawRect(0f, 0f, w, h, noisePaint)
     }
+}
+
+/**
+ * 环面高斯峰: center 可越过左右边界循环滚动; 距离按环面最短路径,
+ * 波峰从右边消失会从左边重新出现, 形成持续的左→右滚动.
+ */
+private fun gauss(xa: Float, center: Float, width: Float): Float {
+    var c = center % 1f
+    if (c < 0f) c += 1f
+    var d = abs(xa - c)
+    if (d > 0.5f) d = 1f - d
+    return exp(-(d * d) / (2f * width * width))
 }
 
 /**
@@ -246,4 +287,28 @@ fun GrainOverlay(modifier: Modifier = Modifier, alpha: Float = 0.08f) {
     Canvas(modifier = modifier.fillMaxSize()) {
         drawContext.canvas.drawRect(0f, 0f, size.width, size.height, paint)
     }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 值噪声 (Value Noise): 顶点维度 + 时间维度 → 有机、不重复、不对称
+// ═══════════════════════════════════════════════════════════
+
+private fun hashNoise(x: Int, y: Int): Float {
+    var h = x * 374761393 + y * 668265263
+    h = (h xor (h ushr 13)) * 1274126177
+    h = h xor (h ushr 16)
+    return (h and 0x7fffffff) / 2147483647f
+}
+
+private fun valueNoise(x: Float, y: Float): Float {
+    val xi = floor(x).toInt()
+    val yi = floor(y).toInt()
+    val xf = x - xi
+    val yf = y - yi
+    val u = xf * xf * (3f - 2f * xf)
+    val v = yf * yf * (3f - 2f * yf)
+    // 双线性插值 (Float 版 lerp 手写, 避免 graphics 包没有 Float 重载)
+    val a = hashNoise(xi, yi) + (hashNoise(xi + 1, yi) - hashNoise(xi, yi)) * u
+    val b = hashNoise(xi, yi + 1) + (hashNoise(xi + 1, yi + 1) - hashNoise(xi, yi + 1)) * u
+    return a + (b - a) * v
 }

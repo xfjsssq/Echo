@@ -24,9 +24,9 @@ object PasswordVerifier {
     fun remainingSeconds(): Int = LockoutManager.remainingSeconds().toInt()
 
     /**
-     * 验证 PIN / 图案.
+     * 验证密码 (PIN 或扩展密码).
      *
-     * @param input 用户输入 (PIN 为 6 位数字, 图案为逗号分隔的点序 "0,1,2,3")
+     * @param input 用户输入 (PIN 为 6 位数字, 扩展密码为混合字符)
      * @param storedHash 存储的哈希 (saltHex:hashHex)
      */
     fun verifyPassword(input: String, storedHash: String?): Result {

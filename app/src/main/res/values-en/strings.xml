@@ -154,14 +154,15 @@
     <string name="password_settings">Password settings</string>
     <string name="password_type_title">Choose password type</string>
     <string name="password_type_pin">6-digit PIN</string>
-    <string name="password_type_pattern">Pattern lock</string>
+    <string name="password_type_mixed">Extended password</string>
+    <string name="password_type_subtitle">A 6-digit PIN unlocks faster; an extended password is more secure and may include letters, numbers and symbols</string>
     <string name="pin_input_hint">Enter a 6-digit PIN</string>
     <string name="pin_confirm_hint">Enter the PIN again</string>
-    <string name="pattern_input_hint">Draw your pattern</string>
-    <string name="pattern_confirm_hint">Draw the pattern again</string>
+    <string name="mixed_input_hint">Enter a password (6-32 chars, letters/digits/symbols)</string>
+    <string name="mixed_confirm_hint">Enter the password again</string>
     <string name="pin_mismatch">The two PINs do not match</string>
-    <string name="pattern_mismatch">The two patterns do not match</string>
-    <string name="pattern_too_short">Connect at least 4 dots</string>
+    <string name="mixed_not_match">Passwords do not match — please start over</string>
+    <string name="mixed_too_short">Password must be at least 6 characters</string>
     <string name="recovery_key_title">Recovery key</string>
     <string name="recovery_key_warning">⚠️ This is your recovery key. Use it to reset your password if forgotten. Screenshot or save it in your notes. Echo cannot recover it. This key is shown only once.</string>
     <string name="recovery_key_label">Your recovery key: %1$s</string>
@@ -174,8 +175,6 @@
     <string name="forgot_password">Forgot password?</string>
     <string name="reset_password_with_recovery">Reset with recovery key</string>
     <string name="lock_screen_subtitle">Enter your password to open Echo</string>
-    <string name="pattern_first_drawn">Pattern recorded — tap confirm, then draw again</string>
-    <string name="pattern_not_match">Patterns do not match — please start over</string>
     <string name="pin_not_match">PINs do not match — please start over</string>
     <string name="lockout_countdown">Too many attempts — try again in %1$d seconds</string>
     <string name="change_password_by_password">Change via password</string>
@@ -194,7 +193,7 @@
     <string name="public_dir_enable_title">Enable public directory backup?</string>
     <string name="public_dir_enable_text">When enabled, long-term recordings can be saved to public storage so they survive app uninstall. Re-import them after reinstall.</string>
     <string name="public_dir_management_title">Public directory files</string>
-    <string name="public_dir_management_note">Files here can only be deleted, not played</string>
+    <string name="public_dir_management_note">Shows files in the backup folder. They can be viewed or deleted; deletion cannot be undone.</string>
     <string name="double_verify_needed">Deleting a public file requires double verification</string>
     <string name="double_verify_step2">Enter the recovery key again</string>
     <string name="sync_public_dir_done">Sync complete, %1$d new file(s) added</string>
@@ -205,7 +204,13 @@
     <string name="import_selected">Import selected</string>
     <string name="import_done">Imported %1$d file(s)</string>
     <string name="import_no_new">No new files to import</string>
-    <string name="public_dir_delete_note">Only removes from list; does not affect files in public directory</string>
+    <string name="public_dir_delete_note">This permanently deletes the original file in the backup folder. It cannot be undone. Recordings inside the app are not affected.</string>
+    <string name="public_dir_files_subtitle">View files in the backup folder</string>
+    <string name="public_dir_choose_folder">Choose backup folder</string>
+    <string name="public_dir_choose_folder_note">Pick a folder for automatic recording backup (the system Download folder is recommended). Recordings are backed up to a safe location and survive app uninstall.</string>
+    <string name="public_dir_backup_pending_title">Backup folder needed</string>
+    <string name="public_dir_backup_pending_text">Some recordings have not been backed up yet. Once you choose a backup folder, recordings are backed up automatically and survive app uninstall.</string>
+    <string name="not_now">Not now</string>
 
     <!-- About -->
     <string name="version">Version</string>
@@ -222,11 +227,11 @@
     <string name="onboarding2_text">Echo always buffers the last few minutes — tap pause to save them.</string>
     <string name="onboarding3_title">Calendar &amp; categories</string>
     <string name="onboarding3_text">Find recordings quickly with the calendar, and move clips to long-term with one tap.</string>
-    <string name="onboarding4_title">Public directory backup</string>
-    <string name="onboarding4_text">When enabled, recordings are saved to Downloads/EchoBackup so they survive app uninstall.</string>
+    <string name="onboarding4_title">Automatic safe backup</string>
+    <string name="onboarding4_text">Your recordings are automatically backed up to a safe default location on your phone, so they survive app uninstall.</string>
     <string name="onboarding4_action">Enable now</string>
     <string name="onboarding5_title">Security</string>
-    <string name="onboarding5_text">Protect your recordings with a PIN or pattern lock.</string>
+    <string name="onboarding5_text">Protect your recordings with a PIN or extended password.</string>
     <string name="onboarding6_title">Choose theme</string>
     <string name="onboarding6_text">Pick your preferred theme — you can always change it later in settings.</string>
 

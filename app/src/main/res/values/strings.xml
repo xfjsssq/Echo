@@ -171,14 +171,15 @@
     <string name="password_settings">密码设置</string>
     <string name="password_type_title">选择密码类型</string>
     <string name="password_type_pin">6 位数字密码</string>
-    <string name="password_type_pattern">图案密码</string>
+    <string name="password_type_mixed">扩展密码</string>
+    <string name="password_type_subtitle">6 位数字密码输入快; 扩展密码更安全, 可含字母、数字与符号</string>
     <string name="pin_input_hint">请输入 6 位数字密码</string>
     <string name="pin_confirm_hint">请再次输入密码</string>
-    <string name="pattern_input_hint">请绘制图案</string>
-    <string name="pattern_confirm_hint">请再次绘制图案</string>
+    <string name="mixed_input_hint">请输入密码 (6-32 位, 字母/数字/符号)</string>
+    <string name="mixed_confirm_hint">请再次输入密码</string>
     <string name="pin_mismatch">两次输入的密码不一致</string>
-    <string name="pattern_mismatch">两次绘制的图案不一致</string>
-    <string name="pattern_too_short">至少连接 4 个点</string>
+    <string name="mixed_not_match">两次密码不一致, 请重新设置</string>
+    <string name="mixed_too_short">密码至少 6 位</string>
     <string name="recovery_key_title">恢复密钥</string>
     <string name="recovery_key_warning">⚠️ 这是你的恢复密钥。忘记密码时用它重置。请截图或记在备忘录中。Echo 无法找回。此密钥仅展示一次。</string>
     <string name="recovery_key_label">您的恢复密钥: %1$s</string>
@@ -191,8 +192,6 @@
     <string name="forgot_password">忘记密码?</string>
     <string name="reset_password_with_recovery">使用恢复密钥重置密码</string>
     <string name="lock_screen_subtitle">请输入密码进入小E</string>
-    <string name="pattern_first_drawn">图案已记录, 点击确认后再次绘制</string>
-    <string name="pattern_not_match">图案不一致, 请重新设置</string>
     <string name="pin_not_match">两次密码不一致, 请重新设置</string>
     <string name="lockout_countdown">尝试次数过多, 请 %1$d 秒后再试</string>
     <string name="change_password_by_password">通过密码修改</string>
@@ -211,7 +210,7 @@
     <string name="public_dir_enable_title">开启公共目录备份?</string>
     <string name="public_dir_enable_text">开启后, 可将长期录音额外存到公共存储, 防止卸载后丢失。重新安装后可通过「导入」恢复。</string>
     <string name="public_dir_management_title">公共目录文件</string>
-    <string name="public_dir_management_note">此目录文件仅可删除, 不能播放</string>
+    <string name="public_dir_management_note">此页面仅显示备份文件夹中的文件，可查看或删除；删除后不可恢复。</string>
     <string name="double_verify_needed">删除公共目录文件需要双重验证</string>
     <string name="double_verify_step2">请再次输入恢复密钥</string>
     <string name="sync_public_dir_done">同步完成, 新增 %1$d 个文件</string>
@@ -222,7 +221,13 @@
     <string name="import_selected">导入所选</string>
     <string name="import_done">已导入 %1$d 个文件</string>
     <string name="import_no_new">没有可导入的新文件</string>
-    <string name="public_dir_delete_note">仅从列表移除, 不影响公共目录中的文件</string>
+    <string name="public_dir_delete_note">将永久删除备份文件夹中的原始文件，不可恢复。应用内的录音不受影响。</string>
+    <string name="public_dir_files_subtitle">查看备份文件夹中的文件</string>
+    <string name="public_dir_choose_folder">选择备份文件夹</string>
+    <string name="public_dir_choose_folder_note">请选择一个文件夹用于自动备份录音（建议选择系统下载目录）。录音会自动备份到安全位置，即使卸载应用也不会丢失。</string>
+    <string name="public_dir_backup_pending_title">需要备份文件夹</string>
+    <string name="public_dir_backup_pending_text">有录音尚未备份到安全位置。选择备份文件夹后，录音会自动备份，卸载应用也不会丢失。</string>
+    <string name="not_now">暂不</string>
 
     <!-- 关于 -->
     <string name="version">版本</string>
@@ -239,11 +244,11 @@
     <string name="onboarding2_text">小E始终在后台缓冲最近几分钟的音频, 按下暂停即可保存。</string>
     <string name="onboarding3_title">日历与分类</string>
     <string name="onboarding3_text">通过日历快速定位录音, 临时录音可一键转为长期保存。</string>
-    <string name="onboarding4_title">公共目录备份</string>
-    <string name="onboarding4_text">开启后, 录音可保存到 Downloads/EchoBackup, 即使卸载应用也不会丢失。</string>
+    <string name="onboarding4_title">自动安全备份</string>
+    <string name="onboarding4_text">您的录音会自动备份到手机默认的安全位置，即使卸载应用也不会丢失。</string>
     <string name="onboarding4_action">立即开启</string>
     <string name="onboarding5_title">安全保护</string>
-    <string name="onboarding5_text">支持密码与图案锁, 保护你的录音隐私。</string>
+    <string name="onboarding5_text">支持数字密码与扩展密码, 保护你的录音隐私。</string>
     <string name="onboarding6_title">选择主题</string>
     <string name="onboarding6_text">挑选你喜欢的界面主题, 也可以随时在设置中修改。</string>
 

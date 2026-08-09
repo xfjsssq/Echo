@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Palette
@@ -57,8 +56,6 @@ import com.echo.recorder.ui.theme.ThemeMode
 private enum class OnboardingCardType {
     /** 普通卡片: 标题 + 文本 + 下一步/完成按钮. */
     PLAIN,
-    /** 公共目录备份卡片: 额外一个"立即开启"按钮. */
-    PUBLIC_DIR,
     /** 主题选择卡片: 三个单选选项. */
     THEME,
 }
@@ -74,7 +71,8 @@ private val CARDS = listOf(
     OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding1_title, R.string.onboarding1_text),
     OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding2_title, R.string.onboarding2_text),
     OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding3_title, R.string.onboarding3_text),
-    OnboardingCard(OnboardingCardType.PUBLIC_DIR, R.string.onboarding4_title, R.string.onboarding4_text, R.string.onboarding4_action),
+    // 公共目录备份: 永远默认开启, 卡片仅告知功能, 不提供开关/按钮, 不显示路径.
+    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding4_title, R.string.onboarding4_text),
     OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding5_title, R.string.onboarding5_text),
     OnboardingCard(OnboardingCardType.THEME, R.string.onboarding6_title, R.string.onboarding6_text),
 )
@@ -82,7 +80,6 @@ private val CARDS = listOf(
 /** 卡片类型 → 展示图标. */
 private fun cardIcon(type: OnboardingCardType): ImageVector = when (type) {
     OnboardingCardType.PLAIN -> Icons.Filled.Mic
-    OnboardingCardType.PUBLIC_DIR -> Icons.Filled.CloudUpload
     OnboardingCardType.THEME -> Icons.Filled.Palette
 }
 
@@ -90,13 +87,11 @@ private fun cardIcon(type: OnboardingCardType): ImageVector = when (type) {
  * 首次启动引导卡片 (居中卡片样式, 半透明遮罩).
  *
  * @param onFinish 引导完成回调
- * @param onEnablePublicDir 用户点击"立即开启"公共目录备份
  * @param onSelectTheme 用户在引导中选择主题
  */
 @Composable
 fun OnboardingScreen(
     onFinish: () -> Unit,
-    onEnablePublicDir: () -> Unit = {},
     themeMode: ThemeMode = ThemeMode.LIGHT,
     onThemeChange: (ThemeMode) -> Unit = {},
 ) {
@@ -207,7 +202,6 @@ fun OnboardingScreen(
                     )
                     else -> PlainCardContent(
                         card = card,
-                        onEnablePublicDir = onEnablePublicDir,
                     )
                 }
 
@@ -243,7 +237,6 @@ fun OnboardingScreen(
 @Composable
 private fun PlainCardContent(
     card: OnboardingCard,
-    onEnablePublicDir: () -> Unit,
 ) {
     Text(
         stringResource(card.titleRes),
@@ -259,14 +252,6 @@ private fun PlainCardContent(
         textAlign = TextAlign.Center,
         modifier = Modifier.padding(top = 12.dp),
     )
-    if (card.type == OnboardingCardType.PUBLIC_DIR && card.actionRes != null) {
-        Button(
-            onClick = onEnablePublicDir,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 20.dp),
-        ) { Text(stringResource(card.actionRes)) }
-    }
 }
 
 @Composable

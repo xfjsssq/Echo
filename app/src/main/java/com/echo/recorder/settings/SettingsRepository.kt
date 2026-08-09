@@ -41,12 +41,12 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val BUFFER_SECONDS = intPreferencesKey("buffer_seconds")
         val PASSWORD_ENABLED = booleanPreferencesKey("password_enabled")
-        val PASSWORD_TYPE = stringPreferencesKey("password_type") // "pin" / "pattern"
+        val PASSWORD_TYPE = stringPreferencesKey("password_type") // "pin" / "mixed"
         val PASSWORD_HASH = stringPreferencesKey("password_hash") // saltHex:hashHex
         val RECOVERY_HASH = stringPreferencesKey("recovery_hash") // saltHex:hashHex
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val LANGUAGE = stringPreferencesKey("language") // "zh" / "en"
-        val PUBLIC_DIR_ENABLED = booleanPreferencesKey("public_dir_enabled")
+        val PUBLIC_TREE_URI = stringPreferencesKey("public_tree_uri") // SAF 备份文件夹授权
         val ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
     }
 
@@ -86,8 +86,9 @@ class SettingsRepository(private val context: Context) {
         prefs[Keys.LANGUAGE]
     }
 
-    val publicDirEnabled: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
-        prefs[Keys.PUBLIC_DIR_ENABLED] ?: false
+    /** 公共目录备份文件夹的 SAF tree URI, null 表示尚未授权. */
+    val publicTreeUri: Flow<String?> = context.settingsDataStore.data.map { prefs ->
+        prefs[Keys.PUBLIC_TREE_URI]
     }
 
     val onboardingDone: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
@@ -135,8 +136,10 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun setPublicDirEnabled(enabled: Boolean) {
-        context.settingsDataStore.edit { it[Keys.PUBLIC_DIR_ENABLED] = enabled }
+    suspend fun setPublicTreeUri(uri: String?) {
+        context.settingsDataStore.edit {
+            if (uri == null) it.remove(Keys.PUBLIC_TREE_URI) else it[Keys.PUBLIC_TREE_URI] = uri
+        }
     }
 
     suspend fun setOnboardingDone(done: Boolean) {

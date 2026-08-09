@@ -12,10 +12,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,17 +39,18 @@ import kotlinx.coroutines.delay
 /**
  * 冷启动 + 主动锁定统一锁屏层.
  *
- * 全屏覆盖, 验证密码/图案通过后调用 [onUnlocked] 进入主界面.
+ * 全屏覆盖, 验证密码通过后调用 [onUnlocked] 进入主界面.
  * 支持:
- * - PIN (6 位数字) 和图案两种验证
+ * - PIN (6 位数字) 与扩展密码 (混合字符) 两种验证
  * - 错误次数锁定倒计时
  * - 忘记密码→恢复密钥重置
+ * 图案密码已彻底移除.
  */
 @Composable
 fun LockScreen(
     storedHash: String?,
     recoveryHash: String?,
-    isPattern: Boolean,
+    passwordType: String?,
     onUnlocked: () -> Unit,
     onResetPassword: () -> Unit = {},
 ) {
@@ -133,10 +134,10 @@ fun LockScreen(
                 )
             }
             else -> {
-                // 密码/图案验证.
+                // 密码验证.
                 PasswordPromptContent(
                     storedHash = storedHash,
-                    isPattern = isPattern,
+                    passwordType = passwordType,
                     onVerify = {
                         LockoutManager.recordSuccess()
                         onUnlocked()
@@ -151,35 +152,44 @@ fun LockScreen(
     }
 }
 
-/** 密码/图案验证内容. */
+/** 密码验证内容. */
 @Composable
 private fun PasswordPromptContent(
     storedHash: String,
-    isPattern: Boolean,
+    passwordType: String?,
     onVerify: () -> Unit,
     onWrong: () -> Unit,
     onForgot: () -> Unit,
 ) {
     var error by remember { mutableStateOf(false) }
 
-    if (isPattern) {
-        var patternResetKey by remember { mutableIntStateOf(0) }
-        PatternLockView(
-            resetKey = patternResetKey,
-            onPatternComplete = { p ->
-                when (PasswordVerifier.verifyPassword(p.joinToString(","), storedHash)) {
+    if (passwordType == "mixed") {
+        // 扩展密码: 输入 + 确认按钮.
+        var input by remember { mutableStateOf("") }
+        MixedPasswordInput(
+            value = input,
+            onValueChange = { input = it; error = false },
+            label = stringResource(R.string.mixed_input_hint),
+            onImeAction = {
+                when (PasswordVerifier.verifyPassword(input, storedHash)) {
                     PasswordVerifier.Result.Success -> onVerify()
                     PasswordVerifier.Result.Locked -> { /* 由倒计时处理 */ }
-                    PasswordVerifier.Result.Wrong -> {
-                        error = true
-                        patternResetKey++
-                        onWrong()
-                    }
-                    else -> { /* sealed 已穷尽, 此分支不会到达 */ }
+                    PasswordVerifier.Result.Wrong -> { error = true; onWrong() }
+                    else -> { /* sealed 已穷尽 */ }
                 }
             },
         )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = {
+            when (PasswordVerifier.verifyPassword(input, storedHash)) {
+                PasswordVerifier.Result.Success -> onVerify()
+                PasswordVerifier.Result.Locked -> { /* 由倒计时处理 */ }
+                PasswordVerifier.Result.Wrong -> { error = true; onWrong() }
+                else -> { /* sealed 已穷尽 */ }
+            }
+        }) { Text(stringResource(R.string.confirm)) }
     } else {
+        // PIN: 6 位数字, 输满自动验证.
         PinInput(
             onComplete = { pin ->
                 when (PasswordVerifier.verifyPassword(pin, storedHash)) {
@@ -217,7 +227,7 @@ private fun RecoveryKeyReset(
     var input by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
 
-    OutlinedTextFieldPin(
+    RecoveryKeyInput(
         value = input,
         onValueChange = { input = it; error = false },
         label = stringResource(R.string.recovery_key_title),

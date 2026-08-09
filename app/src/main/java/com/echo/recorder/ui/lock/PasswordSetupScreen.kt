@@ -29,10 +29,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
-import com.echo.recorder.auth.PasswordVerifier
 import com.echo.recorder.settings.PasswordCrypto
 import com.echo.recorder.settings.SettingsRepository
 import kotlinx.coroutines.launch
@@ -40,9 +41,10 @@ import kotlinx.coroutines.launch
 /**
  * 密码设置流程.
  *
- * 数字密码: 选类型 → 输入 6 位 → 确认按钮 → 再次输入 → 一致则生成恢复密钥.
- * 图案密码: 选类型 → 绘制图案 → 图案保留 + 确认按钮 → 再次绘制 → 一致则生成恢复密钥.
+ * 类型: PIN (6 位数字) 或扩展密码 (6-32 位混合字符).
+ * 流程: 选类型 → 第一次输入 → 再次输入 → 一致则生成恢复密钥 → 确认后写入.
  * 不一致则提示并回到第一次输入.
+ * 图案密码已彻底移除.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,18 +55,21 @@ fun PasswordSetupScreen(
     val context = LocalContext.current
     val repo = remember { SettingsRepository(context) }
     val scope = rememberCoroutineScope()
+    // 仅进入非输入步骤 (恢复密钥展示) 前收起键盘;
+    // 输入步骤之间 (第一步→第二步, 不一致返回重输) 保持输入法打开,
+    // 新输入框拿到焦点时 IME 自然延续, 避免"收起→立刻弹出"动画竞态导致键盘唤不醒.
+    val keyboard = LocalSoftwareKeyboardController.current
 
     // 0=选类型 1=第一次输入 2=第二次输入 3=恢复密钥展示
     var step by remember { mutableIntStateOf(0) }
-    var isPattern by remember { mutableStateOf(false) }
+    var passwordType by remember { mutableStateOf("pin") }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf<Int?>(null) }
     var recoveryKey by remember { mutableStateOf<String?>(null) }
     // 内存中暂存的密码和恢复密钥, 待用户确认恢复密钥后才写入 DataStore.
     var pendingPassword by remember { mutableStateOf<Pair<String, String>?>(null) }
-    // 图案重置 key, 用于清空 PatternLockView.
-    var patternResetKey by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -86,22 +91,31 @@ fun PasswordSetupScreen(
         ) {
             when (step) {
                 0 -> TypeSelect(
-                    onPickPin = { isPattern = false; step = 1; error = false },
-                    onPickPattern = { isPattern = true; step = 1; error = false },
+                    onPickPin = { passwordType = "pin"; step = 1; error = false; errorMsg = null },
+                    onPickMixed = { passwordType = "mixed"; step = 1; error = false; errorMsg = null },
                 )
                 1 -> FirstEnter(
-                    isPattern = isPattern,
-                    label = if (isPattern) R.string.pattern_input_hint else R.string.pin_input_hint,
-                    resetKey = patternResetKey,
-                    onDrawn = { first = it; error = false; step = 2 },
+                    passwordType = passwordType,
+                    error = error,
+                    errorMsg = errorMsg,
+                    onDone = { value ->
+                        if (value.length >= 6) {
+                            first = value
+                            error = false
+                            errorMsg = null
+                            step = 2
+                        } else {
+                            error = true
+                            errorMsg = R.string.mixed_too_short
+                        }
+                    },
                 )
                 2 -> SecondEnter(
-                    isPattern = isPattern,
-                    first = first,
-                    label = if (isPattern) R.string.pattern_confirm_hint else R.string.pin_confirm_hint,
-                    resetKey = patternResetKey,
+                    passwordType = passwordType,
                     error = error,
-                    onConfirm = { second = it
+                    errorMsg = errorMsg,
+                    onConfirm = { value ->
+                        second = value
                         if (second == first) {
                             // 先在内存中完成所有计算, 再展示恢复密钥.
                             val key = PasswordCrypto.generateRecoveryKey()
@@ -112,12 +126,14 @@ fun PasswordSetupScreen(
                             val encodedRecovery = PasswordCrypto.encode(key, rSalt)
                             // 密码存储推迟到用户确认恢复密钥后, 避免 Activity 被销毁时恢复密钥未展示.
                             pendingPassword = encodedPassword to encodedRecovery
+                            keyboard?.hide()
                             step = 3
                         } else {
                             // 不一致: 回到第一次输入.
                             error = true
-                            first = ""; second = ""
-                            patternResetKey++
+                            errorMsg = if (passwordType == "mixed") R.string.mixed_not_match else R.string.pin_not_match
+                            first = ""
+                            second = ""
                             step = 1
                         }
                     },
@@ -125,13 +141,15 @@ fun PasswordSetupScreen(
                 3 -> RecoveryKeyShow(
                     key = recoveryKey ?: "",
                     onFinish = {
-                        // 用户确认已记录恢复密钥, 现在写入密码到 DataStore.
+                        // 用户确认已记录恢复密钥, 现在写入 DataStore.
+                        // 顺序: 先写类型/哈希/恢复密钥, 最后再启用密码,
+                        // 避免中途被杀导致"已启用但无密码哈希"的锁死空白页状态.
                         val (encPwd, encRec) = pendingPassword ?: ("" to "")
                         scope.launch {
-                            repo.setPasswordEnabled(true)
-                            repo.setPasswordType(if (isPattern) "pattern" else "pin")
+                            repo.setPasswordType(passwordType)
                             repo.setPassword(encPwd)
                             repo.setRecoveryHash(encRec)
+                            repo.setPasswordEnabled(true)
                         }
                         onDone()
                     },
@@ -142,8 +160,15 @@ fun PasswordSetupScreen(
 }
 
 @Composable
-private fun TypeSelect(onPickPin: () -> Unit, onPickPattern: () -> Unit) {
+private fun TypeSelect(onPickPin: () -> Unit, onPickMixed: () -> Unit) {
     Text(stringResource(R.string.password_type_title), style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    Text(
+        stringResource(R.string.password_type_subtitle),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -151,86 +176,80 @@ private fun TypeSelect(onPickPin: () -> Unit, onPickPattern: () -> Unit) {
         OutlinedButton(onClick = onPickPin, modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.password_type_pin))
         }
-        OutlinedButton(onClick = onPickPattern, modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.password_type_pattern))
+        OutlinedButton(onClick = onPickMixed, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.password_type_mixed))
         }
     }
 }
 
 @Composable
 private fun FirstEnter(
-    isPattern: Boolean,
-    label: Int,
-    resetKey: Int,
-    onDrawn: (String) -> Unit,
+    passwordType: String,
+    error: Boolean,
+    errorMsg: Int?,
+    onDone: (String) -> Unit,
 ) {
-    if (isPattern) {
-        Text(stringResource(label))
-        Spacer(Modifier.height(16.dp))
-        var drawn by remember { mutableStateOf<List<Int>>(emptyList()) }
-        PatternLockView(
-            resetKey = resetKey,
-            onPatternComplete = { drawn = it },
+    if (passwordType == "mixed") {
+        // 扩展密码: 输入 + 确认按钮.
+        var value by remember { mutableStateOf("") }
+        MixedPasswordInput(
+            value = value,
+            onValueChange = { value = it },
+            label = stringResource(R.string.mixed_input_hint),
+            onImeAction = { onDone(value) },
         )
-        // 绘制完成后显示确认按钮 (图案保留在屏幕上).
-        if (drawn.size >= 4) {
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = { onDone(value) }) { Text(stringResource(R.string.confirm)) }
+        if (error) {
             Text(
-                stringResource(R.string.pattern_first_drawn),
-                color = MaterialTheme.colorScheme.primary,
+                stringResource(errorMsg ?: R.string.mixed_too_short),
+                color = MaterialTheme.colorScheme.error,
             )
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = { onDrawn(drawn.joinToString(",")) },
-            ) { Text(stringResource(R.string.confirm)) }
         }
     } else {
-        PinInput(
-            onComplete = { onDrawn(it) },
-        )
+        PinInput(onComplete = onDone)
     }
 }
 
 @Composable
 private fun SecondEnter(
-    isPattern: Boolean,
-    first: String,
-    label: Int,
-    resetKey: Int,
+    passwordType: String,
     error: Boolean,
+    errorMsg: Int?,
     onConfirm: (String) -> Unit,
 ) {
-    if (isPattern) {
-        Text(stringResource(label))
-        Spacer(Modifier.height(16.dp))
-        var drawn by remember { mutableStateOf<List<Int>>(emptyList()) }
-        PatternLockView(
-            resetKey = resetKey,
-            onPatternComplete = { drawn = it },
+    if (passwordType == "mixed") {
+        // 扩展密码: 输入 + 确认按钮.
+        var value by remember { mutableStateOf("") }
+        MixedPasswordInput(
+            value = value,
+            onValueChange = { value = it },
+            label = stringResource(R.string.mixed_confirm_hint),
+            onImeAction = { onConfirm(value) },
         )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = { onConfirm(value) }) { Text(stringResource(R.string.confirm)) }
         if (error) {
             Text(
-                stringResource(R.string.pattern_not_match),
+                stringResource(errorMsg ?: R.string.mixed_not_match),
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (drawn.size >= 4) {
-            Button(
-                onClick = { onConfirm(drawn.joinToString(",")) },
-            ) { Text(stringResource(R.string.confirm)) }
-        }
     } else {
+        // PIN: 输满 6 位自动进入下一步.
         var value by remember { mutableStateOf("") }
-        OutlinedTextFieldPin(
+        PasswordInputField(
             value = value,
             onValueChange = {
-                value = it
-                if (it.length == 6) onConfirm(it)
+                value = it.filter { c -> c.isDigit() }.take(6)
+                if (value.length == 6) onConfirm(value)
             },
-            label = stringResource(label),
+            label = stringResource(R.string.pin_confirm_hint),
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
         )
         if (error) {
             Text(
-                stringResource(R.string.pin_not_match),
+                stringResource(errorMsg ?: R.string.pin_not_match),
                 color = MaterialTheme.colorScheme.error,
             )
         }

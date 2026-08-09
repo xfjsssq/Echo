@@ -116,9 +116,6 @@ fun EchoApp(
                         scope.launch { settings.setOnboardingDone(true) }
                         step = 3
                     },
-                    onEnablePublicDir = {
-                        scope.launch { settings.setPublicDirEnabled(true) }
-                    },
                     // 主题切换: 仅更新 Compose 状态 + 持久化, 不重建 Activity, 不打断引导流程.
                     // 注意: 这里不能再用 key(themeMode) 包裹 — 那会让整个引导组合被销毁重建,
                     // 索引归零导致"选完主题重新开始引导".
@@ -142,26 +139,30 @@ fun EchoApp(
     // 条件: 密码已启用 且 (冷启动未解锁 或 主动锁定).
     val isUnlocked by SessionAuth.isUnlocked.collectAsStateWithLifecycle()
     if (passwordEnabled && !isUnlocked) {
-        val storedHash by produceState<String?>(initialValue = null) {
-            value = settings.passwordHash.first()
-        }
-        // 等待 DataStore 加载完成; 密码启用时必有哈希, null 表示仍在加载中,
-        // 避免被 LockScreen 误判为"未设密码"而自动放行.
-        if (storedHash == null) {
-            Surface(modifier = Modifier.fillMaxSize()) {}
-            return
+        // 等待 DataStore 加载完成再决定是否显示锁屏, 避免误判"未设密码"而自动放行;
+        // 但绝不无限空白等待 —— 若哈希确实缺失(数据异常), 交给 LockScreen 的 null 分支放行,
+        // 用户可重新设置密码, 而不是被锁死在空白页.
+        var storedHash by remember { mutableStateOf<String?>(null) }
+        var hashLoaded by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            storedHash = settings.passwordHash.first()
+            hashLoaded = true
         }
         val recoveryHash by produceState<String?>(initialValue = null) {
             value = settings.recoveryHash.first()
         }
-        val isPattern by produceState(initialValue = false) {
-            value = settings.passwordType.first() == "pattern"
+        val passwordType by produceState<String?>(initialValue = null) {
+            value = settings.passwordType.first()
+        }
+        if (!hashLoaded) {
+            Surface(modifier = Modifier.fillMaxSize()) {}
+            return
         }
         Surface(modifier = Modifier.fillMaxSize()) {
             LockScreen(
                 storedHash = storedHash,
                 recoveryHash = recoveryHash,
-                isPattern = isPattern,
+                passwordType = passwordType,
                 onUnlocked = {
                     SessionAuth.unlock()
                 },
@@ -186,14 +187,9 @@ fun EchoApp(
         val recoveryHash by produceState<String?>(initialValue = null) {
             value = settings.recoveryHash.first()
         }
-        val passwordType by produceState<String?>(initialValue = null) {
-            value = settings.passwordType.first()
-        }
-        val isPattern = passwordType == "pattern"
         PasswordPromptDialog(
             storedHash = storedHash,
             recoveryHash = recoveryHash,
-            isPattern = isPattern,
             onVerify = {
                 askExitPassword = false
                 viewModel.exitCompletely()

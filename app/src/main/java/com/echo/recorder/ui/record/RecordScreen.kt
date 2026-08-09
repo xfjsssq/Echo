@@ -183,14 +183,10 @@ fun RecordScreen(
         val storedHash by produceState<String?>(initialValue = null) {
             value = settings.passwordHash.first()
         }
-        val isPattern by produceState(initialValue = false) {
-            value = settings.passwordType.first() == "pattern"
-        }
         if (storedHash != null) {
             PasswordPromptDialog(
                 storedHash = storedHash,
                 recoveryHash = null,
-                isPattern = isPattern,
                 onVerify = {
                     verifyDelete = false
                     viewModel.onDeletePressed()
@@ -826,14 +822,10 @@ private fun ExitButton(onExit: () -> Unit, modifier: Modifier = Modifier) {
         val storedHash by produceState<String?>(initialValue = null) {
             value = settings.passwordHash.first()
         }
-        val isPattern by produceState(initialValue = false) {
-            value = settings.passwordType.first() == "pattern"
-        }
         if (storedHash != null) {
             PasswordPromptDialog(
                 storedHash = storedHash,
                 recoveryHash = null,
-                isPattern = isPattern,
                 onVerify = {
                     askPassword = false
                     onExit()

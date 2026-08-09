@@ -22,7 +22,7 @@ class PasswordViewModel(private val repo: SettingsRepository) : ViewModel() {
     val passwordEnabled: StateFlow<Boolean> = repo.passwordEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** 密码类型 ("pin" / "pattern"). */
+    /** 密码类型 ("pin" / "mixed"). */
     val passwordType: StateFlow<String?> = repo.passwordType
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -50,7 +50,7 @@ class PasswordViewModel(private val repo: SettingsRepository) : ViewModel() {
     }
 
     /**
-     * 验证密码 (PIN 或 图案).
+     * 验证密码 (PIN 或 扩展密码).
      *
      * @return 验证结果: Success / Wrong / Locked
      */

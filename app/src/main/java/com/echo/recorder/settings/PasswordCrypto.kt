@@ -9,7 +9,7 @@ import javax.crypto.spec.PBEKeySpec
  *
  * 存储格式为 "saltHex:hashHex". 验证时用存储的盐重新哈希输入, 与存储的哈希比对.
  * 使用常量时间比较, 防止时序攻击.
- * 适用于 6 位数字密码 / 图案点序 / 恢复密钥.
+ * 适用于 6 位数字密码 / 扩展密码 / 恢复密钥.
  *
  * 参考实现: Android Security 最佳实践 + GitHub App-Locker 项目.
  * PBKDF2 迭代 100,000 次, 6 位 PIN 爆破从 <1ms 提升到 ~100s.
