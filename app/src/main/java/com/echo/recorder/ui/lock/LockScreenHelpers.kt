@@ -78,7 +78,10 @@ fun PasswordInputField(
 
     LaunchedEffect(Unit) {
         // 等窗口/对话框稳定后再请求焦点, 否则部分机型焦点被抢占导致输入法不弹出.
-        delay(200)
+        // 500ms: 覆盖"上一步输入框移出组合树 → 系统收起输入法动画"的完整窗口,
+        // 避免新输入框在 IME 收起动画中抢焦点, 导致后续 show 请求被系统吞掉
+        // (典型场景: PIN 第一步输满 6 位自动进入第二步时, 第一步的收起动画还没结束).
+        delay(500)
         focusRequester.requestFocus()
         // 焦点拿到后再等一拍, 让 IME 完成窗口附着.
         delay(200)
