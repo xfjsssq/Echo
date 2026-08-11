@@ -20,6 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
 import com.echo.recorder.settings.PasswordCrypto
 import com.echo.recorder.settings.SettingsRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -49,6 +51,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasswordSetupScreen(
+    isChangePassword: Boolean = false,
     onDone: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -61,8 +64,14 @@ fun PasswordSetupScreen(
     val keyboard = LocalSoftwareKeyboardController.current
 
     // 0=选类型 1=第一次输入 2=第二次输入 3=恢复密钥展示
-    var step by remember { mutableIntStateOf(0) }
+    var step by remember { mutableIntStateOf(if (isChangePassword) 1 else 0) }
     var passwordType by remember { mutableStateOf("pin") }
+    // 修改密码: 读取原密码类型; 首次设置: 默认 "pin", 由用户在类型选择页决定.
+    LaunchedEffect(Unit) {
+        if (isChangePassword) {
+            repo.passwordType.first()?.let { passwordType = it }
+        }
+    }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
@@ -117,7 +126,18 @@ fun PasswordSetupScreen(
                     onConfirm = { value ->
                         second = value
                         if (second == first) {
-                            // 先在内存中完成所有计算, 再展示恢复密钥.
+                            if (isChangePassword) {
+                                // 修改密码: 只更新密码哈希, 恢复密钥保持不变 (ChangePasswordDialog 语义).
+                                // 不生成新密钥, 不展示恢复密钥.
+                                val salt = PasswordCrypto.newSalt()
+                                val encodedPassword = PasswordCrypto.encode(first, salt)
+                                scope.launch {
+                                    repo.setPassword(encodedPassword)
+                                    repo.setPasswordEnabled(true)
+                                }
+                                onDone()
+                            } else {
+                                // 首次设置: 先在内存中完成所有计算, 再展示恢复密钥.
                             val key = PasswordCrypto.generateRecoveryKey()
                             recoveryKey = key
                             val salt = PasswordCrypto.newSalt()
@@ -128,7 +148,8 @@ fun PasswordSetupScreen(
                             pendingPassword = encodedPassword to encodedRecovery
                             keyboard?.hide()
                             step = 3
-                        } else {
+                            }
+                            } else {
                             // 不一致: 回到第一次输入.
                             error = true
                             errorMsg = if (passwordType == "mixed") R.string.mixed_not_match else R.string.pin_not_match

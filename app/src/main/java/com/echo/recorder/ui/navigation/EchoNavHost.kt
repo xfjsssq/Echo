@@ -4,8 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.echo.recorder.ui.about.AboutScreen
 import com.echo.recorder.ui.list.ListScreen
 import com.echo.recorder.ui.list.ListViewModel
@@ -60,10 +62,10 @@ fun EchoNavHost(
         composable(EchoRoutes.SETTINGS) {
             SettingsScreen(
                 onRestartService = onRestartService,
-                onOpenPasswordSetup = { navController.navigate(EchoRoutes.PASSWORD_SETUP) },
+                onOpenPasswordSetup = { navController.navigate(EchoRoutes.passwordSetupRoute(false)) },
                 onOpenAbout = { navController.navigate(EchoRoutes.ABOUT) },
                 onOpenPublicDir = { navController.navigate(EchoRoutes.PUBLIC_DIR) },
-                onChangePassword = { navController.navigate(EchoRoutes.PASSWORD_SETUP) },
+                onChangePassword = { navController.navigate(EchoRoutes.passwordSetupRoute(true)) },
                 // 设置页"如何使用小E" → 重新弹出引导卡片
                 onOpenOnboarding = { navController.navigate(EchoRoutes.ONBOARDING) },
                 themeMode = themeMode,
@@ -78,8 +80,19 @@ fun EchoNavHost(
                 onThemeChange = onThemeChange,
             )
         }
-        composable(EchoRoutes.PASSWORD_SETUP) {
+        composable(
+            route = EchoRoutes.PASSWORD_SETUP,
+            arguments = listOf(
+                navArgument(EchoRoutes.PASSWORD_SETUP_IS_CHANGE) {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+            ),
+        ) { backStackEntry ->
+            val isChangePassword =
+                backStackEntry.arguments?.getBoolean(EchoRoutes.PASSWORD_SETUP_IS_CHANGE) ?: false
             PasswordSetupScreen(
+                isChangePassword = isChangePassword,
                 onDone = { navController.popBackStack() },
                 onBack = { navController.popBackStack() },
             )
