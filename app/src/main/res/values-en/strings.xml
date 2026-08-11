@@ -74,6 +74,7 @@
     <string name="batch_move_to_longterm">Batch move to long-term</string>
     <string name="batch_delete">Batch delete</string>
     <string name="exit_selection">Exit selection</string>
+    <string name="select_all">Select all</string>
 
     <!-- Settings -->
     <string name="settings_buffer_title">Instant replay buffer</string>
@@ -202,6 +203,7 @@
     <string name="import_from_public_dir_title">Import from public directory</string>
     <string name="import_from_public_dir_note">Select recordings to import into the long-term list</string>
     <string name="import_selected">Import selected</string>
+    <string name="save_to_public_dir">Save to public folder</string>
     <string name="import_done">Imported %1$d file(s)</string>
     <string name="import_no_new">No new files to import</string>
     <string name="public_dir_delete_note">This permanently deletes the original file in the backup folder. It cannot be undone. Recordings inside the app are not affected.</string>

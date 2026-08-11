@@ -169,6 +169,26 @@ class ListViewModel(
     }.getOrDefault(0L)
 
     // ---- 多选 ----
+    /** 全选当前 Tab 下所有录音 (同时进入多选模式). */
+    fun selectAll() {
+        val current = if (_state.value.tab == ListTab.TEMPORARY) _state.value.temporary else _state.value.longTerm
+        _state.value = _state.value.copy(
+            selectionMode = true,
+            selected = current.map { it.id }.toSet(),
+            expandedId = null,
+        )
+    }
+
+    /** 手动保存到公共目录 (备份失败/未授权时供用户手动触发重试). */
+    fun saveToPublic(id: String) {
+        viewModelScope.launch {
+            val rec = _state.value.temporary.firstOrNull { it.id == id }
+                ?: _state.value.longTerm.firstOrNull { it.id == id }
+                ?: return@launch
+            backupToPublic(rec)
+        }
+    }
+
     fun enterSelection(id: String) {
         _state.value = _state.value.copy(selectionMode = true, selected = setOf(id), expandedId = null)
     }

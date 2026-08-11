@@ -78,6 +78,7 @@ import com.echo.recorder.R
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.common.PublicDirManager
 import com.echo.recorder.domain.model.Recording
+import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.playback.AudioPlayer
 import com.echo.recorder.playback.DefaultAudioPlayerFactory
 import com.echo.recorder.settings.SettingsRepository
@@ -212,6 +213,11 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.SemiBold,
                             )
+                            Spacer(Modifier.weight(1f))
+                            // 全选: 选中当前 Tab 下所有录音 (进入多选模式).
+                            TextButton(onClick = { viewModel.selectAll() }) {
+                                Text(stringResource(R.string.select_all))
+                            }
                         }
                     } else {
                         val rec = entry.rec!!
@@ -228,6 +234,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                             },
                             onLongPress = { viewModel.enterSelection(rec.id) },
                             onSave = { viewModel.moveToLongTerm(rec.id) },
+                            onSaveToPublic = { viewModel.saveToPublic(rec.id) },
                             onDelete = { verifySingleDelete = rec.id },
                             onRequestPlayThis = { playingId = rec.id },
                             onShare = { shareRecording(context, rec) },
@@ -577,6 +584,7 @@ private fun RecordingRow(
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onSave: () -> Unit,
+    onSaveToPublic: () -> Unit = {},
     onDelete: () -> Unit,
     onRequestPlayThis: () -> Unit,
     onShare: () -> Unit = {},
@@ -693,6 +701,7 @@ private fun RecordingRow(
                     isPlayingThis = isPlayingThis,
                     onRequestPlayThis = onRequestPlayThis,
                     onSave = onSave,
+                    onSaveToPublic = onSaveToPublic,
                     onDelete = onDelete,
                     onShare = onShare,
                 )
@@ -708,6 +717,7 @@ private fun MiniPlayer(
     isPlayingThis: Boolean,
     onRequestPlayThis: () -> Unit,
     onSave: () -> Unit,
+    onSaveToPublic: () -> Unit = {},
     onDelete: () -> Unit,
     onShare: () -> Unit = {},
 ) {
@@ -761,6 +771,32 @@ private fun MiniPlayer(
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.weight(1f))
+            // 临时录音: 移至长期 (存档); 长期录音: 保存到公共目录 (手动重试备份).
+            if (rec.category == RecordingCategory.TEMPORARY) {
+                FeatheredOrbIcon(
+                    icon = Icons.Filled.Archive,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
+                    contentDescription = stringResource(R.string.move_to_longterm),
+                    onClick = onSave,
+                    iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    buttonSize = 38.dp,
+                    iconSize = 18.dp,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+            } else if (!rec.isPublicVirtual) {
+                FeatheredOrbIcon(
+                    icon = Icons.Filled.Save,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
+                    contentDescription = stringResource(R.string.save_to_public_dir),
+                    onClick = onSaveToPublic,
+                    iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    buttonSize = 38.dp,
+                    iconSize = 18.dp,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+            }
             // 长期录音不再有"保存到公共目录"按钮 —— 自动备份永远开启, 移入长期即自动备份.
             FeatheredOrbIcon(
                 icon = Icons.Filled.Share,
