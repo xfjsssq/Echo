@@ -52,7 +52,6 @@ import com.echo.recorder.settings.BufferDuration
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.lock.PasswordPromptDialog
-import com.echo.recorder.ui.lock.ViewRecoveryKeyDialog
 import com.echo.recorder.ui.lock.ChangePasswordDialog
 import com.echo.recorder.ui.lock.ResetRecoveryKeyDialog
 import kotlinx.coroutines.flow.first
@@ -99,7 +98,6 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     // 修改密码 / 查看恢复密钥 / 重置恢复密钥 / 关闭密码验证.
     var showChangePassword by remember { mutableStateOf(false) }
-    var showViewRecoveryKey by remember { mutableStateOf(false) }
     var showResetRecoveryKey by remember { mutableStateOf(false) }
     var verifyDisablePassword by remember { mutableStateOf(false) }
     // 隐私政策.
@@ -256,13 +254,6 @@ fun SettingsScreen(
         )
     }
 
-    // 查看恢复密钥 (需验证密码).
-    if (showViewRecoveryKey) {
-        ViewRecoveryKeyDialog(
-            onDismiss = { showViewRecoveryKey = false },
-        )
-    }
-
     // 重置恢复密钥.
     if (showResetRecoveryKey) {
         ResetRecoveryKeyDialog(
@@ -373,11 +364,6 @@ fun SettingsScreen(
                     title = stringResource(R.string.change_password),
                     subtitle = stringResource(R.string.change_password_by_password),
                 ) { showChangePassword = true }
-                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
-                Preference(
-                    title = stringResource(R.string.view_recovery_key),
-                    subtitle = stringResource(R.string.view_recovery_key_subtitle),
-                ) { showViewRecoveryKey = true }
                 Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
                 Preference(
                     title = stringResource(R.string.reset_recovery_key_title),
