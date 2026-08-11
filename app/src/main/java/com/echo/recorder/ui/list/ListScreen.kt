@@ -58,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -343,6 +344,9 @@ private fun ImportFromPublicDirDialog(
         value = settings.passwordHash.first()
     }
     var verified by remember { mutableStateOf(SessionAuth.savePublicUnlocked.value) }
+    // 验证通过后先关闭密码对话框 (让关闭动画走完), 延迟片刻再打开导入对话框,
+    // 避免两个 Dialog 窗口一关一开在部分 ROM 上互相抢占 (扫描不执行/输入法丢失).
+    var showImportDialog by remember { mutableStateOf(false) }
     var importable by remember { mutableStateOf<List<PublicDirManager.PublicFileInfo>>(emptyList()) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loading by remember { mutableStateOf(false) }
@@ -362,14 +366,26 @@ private fun ImportFromPublicDirDialog(
             PasswordPromptDialog(
                 storedHash = storedHash,
                 recoveryHash = null,
-                onVerify = { verified = true },
+                onVerify = {
+                    verified = true
+                    scope.launch {
+                        delay(300)
+                        showImportDialog = true
+                    }
+                },
                 onDismiss = onDismiss,
             )
         } else {
-            LaunchedEffect(Unit) { verified = true }
+            LaunchedEffect(Unit) {
+                verified = true
+                showImportDialog = true
+            }
         }
         return
     }
+
+    // 验证刚通过、密码对话框关闭动画未结束时, 暂不渲染导入框.
+    if (!showImportDialog) return
 
     AlertDialog(
         onDismissRequest = onDismiss,
