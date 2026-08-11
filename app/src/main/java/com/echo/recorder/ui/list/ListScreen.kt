@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
@@ -44,6 +45,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -114,6 +116,8 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
 
     var showCalendar by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
+    // 重命名目标录音 id.
+    var renameTarget by remember { mutableStateOf<String?>(null) }
     // 删除密码门控: 单条删除 / 批量删除需验证密码.
     var verifySingleDelete by remember { mutableStateOf<String?>(null) }
     var verifyBatchDelete by remember { mutableStateOf(false) }
@@ -235,6 +239,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                             onLongPress = { viewModel.enterSelection(rec.id) },
                             onSave = { viewModel.moveToLongTerm(rec.id) },
                             onSaveToPublic = { viewModel.saveToPublic(rec.id) },
+                            onRename = { renameTarget = rec.id },
                             onDelete = { verifySingleDelete = rec.id },
                             onRequestPlayThis = { playingId = rec.id },
                             onShare = { shareRecording(context, rec) },
@@ -261,6 +266,37 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
     val listSettings = remember { SettingsRepository(context) }
     val listStoredHash by produceState<String?>(initialValue = null) {
         value = listSettings.passwordHash.first()
+    }
+
+    // 重命名录音.
+    renameTarget?.let { renameId ->
+        val rec = items.firstOrNull { it.id == renameId }
+        if (rec != null) {
+            var newName by remember(renameId) { mutableStateOf(rec.displayName.removeSuffix(".m4a")) }
+            AlertDialog(
+                onDismissRequest = { renameTarget = null },
+                title = { Text(stringResource(R.string.rename)) },
+                text = {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.renameRecording(renameId, newName)
+                            renameTarget = null
+                        },
+                        enabled = newName.isNotBlank(),
+                    ) { Text(stringResource(R.string.confirm)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.cancel)) }
+                },
+            )
+        }
     }
 
     // 单条删除密码门控.
@@ -585,6 +621,7 @@ private fun RecordingRow(
     onLongPress: () -> Unit,
     onSave: () -> Unit,
     onSaveToPublic: () -> Unit = {},
+    onRename: () -> Unit = {},
     onDelete: () -> Unit,
     onRequestPlayThis: () -> Unit,
     onShare: () -> Unit = {},
@@ -702,6 +739,7 @@ private fun RecordingRow(
                     onRequestPlayThis = onRequestPlayThis,
                     onSave = onSave,
                     onSaveToPublic = onSaveToPublic,
+                    onRename = onRename,
                     onDelete = onDelete,
                     onShare = onShare,
                 )
@@ -718,6 +756,7 @@ private fun MiniPlayer(
     onRequestPlayThis: () -> Unit,
     onSave: () -> Unit,
     onSaveToPublic: () -> Unit = {},
+    onRename: () -> Unit = {},
     onDelete: () -> Unit,
     onShare: () -> Unit = {},
 ) {
@@ -804,6 +843,18 @@ private fun MiniPlayer(
                 glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
                 contentDescription = stringResource(R.string.share),
                 onClick = onShare,
+                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                buttonSize = 38.dp,
+                iconSize = 18.dp,
+                modifier = Modifier.padding(horizontal = 2.dp),
+            )
+            // 重命名.
+            FeatheredOrbIcon(
+                icon = Icons.Filled.Edit,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
+                contentDescription = stringResource(R.string.rename),
+                onClick = onRename,
                 iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
                 buttonSize = 38.dp,
                 iconSize = 18.dp,

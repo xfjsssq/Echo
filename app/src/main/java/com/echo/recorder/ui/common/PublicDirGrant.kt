@@ -1,6 +1,5 @@
 package com.echo.recorder.ui.common
 
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -8,54 +7,37 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.echo.recorder.common.PublicDirManager
-import kotlinx.coroutines.launch
 
 /**
- * 公共目录 SAF 授权状态.
+ * 公共目录访问授权状态 (固定路径 Downloads/EchoBackup).
  *
- * [granted] = false 时调用 [PublicDirGrantState.request] 弹出系统文件夹选择器
- * (默认定位到 Download 目录, 即原 EchoBackup 所在位置). 授权成功后持久化
- * (takePersistableUriPermission + DataStore), 并回调 [onGranted] 供调用方补做
- * 备份/刷新等操作.
- *
- * 卸载重装后授权丢失, 重新进入任一使用点即可再次引导授权, 选择同一文件夹即恢复旧文件.
+ * [granted] = false 时调用 [PublicDirGrantState.request] 弹出系统运行时权限对话框
+ * (API 33+ READ_MEDIA_AUDIO / 29-32 READ_EXTERNAL_STORAGE / 26-28 WRITE_EXTERNAL_STORAGE),
+ * 用户点一次"允许"即可, 无需手动选择文件夹. 授权成功后回调 [onGranted] 供调用方
+ * 补做备份/刷新等操作.
  */
 @Composable
 fun rememberPublicDirGrant(onGranted: () -> Unit = {}): PublicDirGrantState {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var granted by remember { mutableStateOf(false) }
     val currentOnGranted by rememberUpdatedState(onGranted)
 
     LaunchedEffect(Unit) { granted = PublicDirManager.hasGrant(context) }
 
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) {
-            scope.launch {
-                PublicDirManager.saveGrant(context, uri)
-                granted = true
-                currentOnGranted()
-            }
-        }
+    val permission = PublicDirManager.requiredPermission()
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        granted = ok
+        if (ok) currentOnGranted()
     }
 
     return remember(granted) {
-        PublicDirGrantState(granted) {
-            runCatching { launcher.launch(initialDownloadUri()) }
-                .onFailure { launcher.launch(null) }
-        }
+        PublicDirGrantState(granted) { launcher.launch(permission) }
     }
 }
-
-/** 系统选择器初始位置: 尽量定位到 Download 目录, 失败则交给系统默认. */
-private fun initialDownloadUri(): Uri? = runCatching {
-    Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload")
-}.getOrNull()
 
 class PublicDirGrantState internal constructor(
     val granted: Boolean,

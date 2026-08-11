@@ -6,6 +6,7 @@
     <string name="unlock">解锁</string>
     <string name="confirm">确认</string>
     <string name="cancel">取消</string>
+    <string name="rename">重命名</string>
     <string name="close">关闭</string>
     <string name="delete">删除</string>
     <string name="save">保存</string>
@@ -225,10 +226,10 @@
     <string name="import_no_new">没有可导入的新文件</string>
     <string name="public_dir_delete_note">将永久删除备份文件夹中的原始文件，不可恢复。应用内的录音不受影响。</string>
     <string name="public_dir_files_subtitle">查看备份文件夹中的文件</string>
-    <string name="public_dir_choose_folder">选择备份文件夹</string>
-    <string name="public_dir_choose_folder_note">请选择一个文件夹用于自动备份录音（建议选择系统下载目录）。录音会自动备份到安全位置，即使卸载应用也不会丢失。</string>
+    <string name="public_dir_choose_folder">允许访问</string>
+    <string name="public_dir_choose_folder_note">录音会自动备份到系统下载文件夹的安全位置，卸载应用也不会丢失。请允许访问以继续。</string>
     <string name="public_dir_backup_pending_title">需要备份文件夹</string>
-    <string name="public_dir_backup_pending_text">有录音尚未备份到安全位置。选择备份文件夹后，录音会自动备份，卸载应用也不会丢失。</string>
+        <string name="public_dir_backup_pending_text">有录音尚未备份到安全位置。允许访问后，录音会自动备份，卸载应用也不会丢失。</string>
     <string name="not_now">暂不</string>
 
     <!-- 关于 -->

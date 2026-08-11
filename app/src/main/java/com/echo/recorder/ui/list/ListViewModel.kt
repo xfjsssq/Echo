@@ -77,6 +77,13 @@ class ListViewModel(
     fun moveToLongTerm(id: String) = act(id, RecordingCategory.LONG_TERM)
     fun delete(id: String) = viewModelScope.launch { repository.delete(id) }
 
+    /** 重命名录音 (改文件系统文件名 + 更新记录). */
+    fun renameRecording(id: String, newName: String) {
+        viewModelScope.launch {
+            repository.rename(id, newName.trim())
+        }
+    }
+
     /**
      * 自动备份: 录音成为长期录音后, 自动复制到备份文件夹.
      * 未授权或复制失败时置 needsPublicGrant, 由 UI 引导授权后重试.
@@ -135,6 +142,8 @@ class ListViewModel(
 
     /**
      * 从备份文件夹导入: 复制到应用私有长期目录, 作为普通长期录音.
+     * - 目标文件名改为基于源文件修改时间的日期名 (如 "7月23日 14:30.m4a"), 重名自动加序号.
+     * - createdAt 使用源文件修改时间, 使导入的历史录音按原始日期分组.
      * 删除这类录音只删除私有副本, 备份文件夹中的原始文件保持不动 (永久备份).
      * @return 实际新增数量.
      */
@@ -142,19 +151,42 @@ class ListViewModel(
         val destDir = longtermDir(context)
         var added = 0
         files.forEach { info ->
-            val dest = File(destDir, info.fileName)
-            if (dest.exists()) return@forEach // 已导入过
+            val destName = importDestName(context, destDir, info.lastModified)
+            val dest = File(destDir, destName)
+            if (dest.exists()) return@forEach // 已导入过 (重名)
             val copied = runCatching {
                 val input = context.contentResolver.openInputStream(info.uri) ?: return@runCatching false
                 input.use { src -> dest.outputStream().use { dst -> src.copyTo(dst) } }
                 true
             }.getOrDefault(false)
             if (copied) {
-                repository.create(dest, readDurationMs(dest))
+                // 保留源文件修改时间作为 createdAt, 导入的历史录音按原始日期分组.
+                repository.create(dest, readDurationMs(dest), info.lastModified)
                 added++
             }
         }
         return added
+    }
+
+    /**
+     * 导入目标文件名: 基于源文件修改时间的本地化日期名, 重名自动加序号.
+     * 中文: "7月23日 14:30.m4a"; 英文: "Jul 23, 14:30.m4a".
+     */
+    private fun importDestName(context: Context, dir: File, lastModified: Long): String {
+        val en = java.util.Locale.getDefault().language == "en"
+        val fmt = if (en) {
+            java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.ENGLISH)
+        } else {
+            java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.CHINA)
+        }
+        val base = fmt.format(java.util.Date(lastModified))
+        var name = "$base.m4a"
+        var i = 2
+        while (File(dir, name).exists()) {
+            name = "$base ($i).m4a"
+            i++
+        }
+        return name
     }
 
     /** 读取音频时长 (ms), 失败返回 0. */

@@ -46,6 +46,13 @@ private class FakeDataSource(
         mutable.value = mutable.value.map { if (it.id == id) updated else it }
         return updated
     }
+
+    override fun rename(id: String, newName: String): Recording? {
+        val target = mutable.value.firstOrNull { it.id == id } ?: return null
+        val updated = target.copy(id = newName, displayName = newName)
+        mutable.value = mutable.value.map { if (it.id == id) updated else it }
+        return updated
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

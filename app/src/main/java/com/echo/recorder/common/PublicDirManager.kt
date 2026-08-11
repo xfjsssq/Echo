@@ -1,32 +1,39 @@
 package com.echo.recorder.common
 
+import android.Manifest
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
-import com.echo.recorder.settings.SettingsRepository
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 公共目录 (备份文件夹) 管理 —— 基于 Storage Access Framework (SAF).
+ * 公共目录 (备份文件夹) 管理 —— 固定路径 Downloads/EchoBackup, 免手动选文件夹.
  *
- * 为什么弃用 MediaStore / 直接 File 路径 (第一性原理):
- * Android 10+ 分区存储下, MediaStore 查询默认只返回"本应用 UID 创建"的媒体条目,
- * 卸载重装后 UID 变化, 旧文件在查询中直接消失; 而直接访问
- * /storage/emulated/0/Download/... 这类公共路径会被系统拒绝 (EACCES).
- * 两者叠加就是"公共目录只是个空壳, 保存的文件完全读不到"的病根.
+ * 相比 SAF 文件夹选择器 (用户要手动选文件夹, 门槛高), 这里改为:
+ * - 固定路径: Download/EchoBackup, 应用内不展示路径.
+ * - API 29+ (分区存储): 通过 MediaStore 按 RELATIVE_PATH 写入/查询公共 Downloads/EchoBackup.
+ *   写入本应用自己的条目无需权限; 读取/删除公共目录下所有 .m4a (包括卸载重装后
+ *   其他身份创建的旧文件) 需要读权限 (API 33+ READ_MEDIA_AUDIO / 29-32 READ_EXTERNAL_STORAGE).
+ *   按 RELATIVE_PATH 过滤而非按 UID 查询, 卸载重装后旧文件仍可读 (不再有"空壳"问题).
+ * - API 26-28: 直接读写文件系统路径 (需 WRITE_EXTERNAL_STORAGE).
  *
- * SAF 方案: 用户通过系统文件夹选择器授权一个文件夹 (默认 Downloads/EchoBackup),
- * 用 takePersistableUriPermission 持久化授权, 之后所有读写走 DocumentFile,
- * 与安装身份/UID 无关 —— 卸载重装后重新选择同一文件夹即可恢复所有旧文件.
+ * 用户只需在系统弹出的权限对话框中点一次"允许", 无需手动选择文件夹.
  */
 object PublicDirManager {
 
-    /** 默认备份文件夹名 (仅用于引导用户在系统选择器中选取, 应用界面不展示). */
+    /** 备份文件夹名 (固定, 不向用户展示路径). */
     const val DIR_NAME = "EchoBackup"
+
+    /** MediaStore 相对路径 (API 29+). */
+    const val RELATIVE_PATH = "Download/$DIR_NAME"
 
     data class PublicFileInfo(
         val fileName: String,
@@ -35,56 +42,128 @@ object PublicDirManager {
         val lastModified: Long,
     )
 
-    /** 是否已获得备份文件夹授权. */
+    /** 当前 API 级别下访问备份文件夹所需的运行时权限. */
+    fun requiredPermission(): String = when {
+        Build.VERSION.SDK_INT >= 33 -> Manifest.permission.READ_MEDIA_AUDIO
+        Build.VERSION.SDK_INT >= 29 -> Manifest.permission.READ_EXTERNAL_STORAGE
+        else -> Manifest.permission.WRITE_EXTERNAL_STORAGE
+    }
+
+    /** 是否已获得备份文件夹访问授权 (权限语义). */
     suspend fun hasGrant(context: Context): Boolean =
-        SettingsRepository(context).publicTreeUri.first() != null
+        ContextCompat.checkSelfPermission(context, requiredPermission()) == PackageManager.PERMISSION_GRANTED
 
-    /** 保存用户选择的文件夹授权, 并申请持久化读写权限. */
-    suspend fun saveGrant(context: Context, treeUri: Uri) {
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                treeUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
-        }
-        SettingsRepository(context).setPublicTreeUri(treeUri.toString())
-    }
-
-    private suspend fun root(context: Context): DocumentFile? = withContext(Dispatchers.IO) {
-        val uriStr = SettingsRepository(context).publicTreeUri.first() ?: return@withContext null
-        runCatching { DocumentFile.fromTreeUri(context, Uri.parse(uriStr)) }.getOrNull()
-    }
+    /** 备份文件夹的本地绝对路径 (API 26-28 直接用; API 29+ 仅兜底). */
+    private fun legacyDir(): File =
+        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DIR_NAME)
 
     /** 扫描备份文件夹根目录下所有 .m4a 文件. */
     suspend fun scanPublic(context: Context): List<PublicFileInfo> = withContext(Dispatchers.IO) {
-        val root = root(context) ?: return@withContext emptyList()
-        runCatching {
-            root.listFiles()
-                .filter { it.isFile && it.name.orEmpty().endsWith(".m4a", ignoreCase = true) }
-                .map { PublicFileInfo(it.name.orEmpty(), it.name.orEmpty(), it.uri, it.lastModified()) }
-                .sortedByDescending { it.lastModified }
-        }.getOrDefault(emptyList())
+        if (Build.VERSION.SDK_INT >= 29) scanViaMediaStore(context) else scanViaFile()
     }
 
-    /**
-     * 复制私有文件到备份文件夹. 同名文件已存在则视为已备份 (幂等), 直接返回成功.
-     */
+    private fun scanViaMediaStore(context: Context): List<PublicFileInfo> = runCatching {
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.DATE_MODIFIED,
+        )
+        val selection = "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?"
+        val args = arrayOf("$RELATIVE_PATH/%")
+        val result = mutableListOf<PublicFileInfo>()
+        context.contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            projection, selection, args,
+            "${MediaStore.Audio.Media.DATE_MODIFIED} DESC",
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(nameCol) ?: continue
+                if (!name.endsWith(".m4a", ignoreCase = true)) continue
+                val id = cursor.getLong(idCol)
+                val lastModified = cursor.getLong(dateCol) * 1000L // DATE_MODIFIED 单位是秒
+                result += PublicFileInfo(
+                    fileName = name,
+                    displayName = name,
+                    uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id),
+                    lastModified = lastModified,
+                )
+            }
+        }
+        result
+    }.getOrDefault(emptyList())
+
+    private fun scanViaFile(): List<PublicFileInfo> = runCatching {
+        legacyDir().listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".m4a", ignoreCase = true) }
+            ?.map { PublicFileInfo(it.name, it.name, Uri.fromFile(it), it.lastModified()) }
+            ?.sortedByDescending { it.lastModified }
+            .orEmpty()
+    }.getOrDefault(emptyList())
+
+    /** 复制私有文件到备份文件夹. 同名文件已存在则视为已备份 (幂等), 直接返回成功. */
     suspend fun copyToPublic(context: Context, src: File, fileName: String): Boolean = withContext(Dispatchers.IO) {
-        val root = root(context) ?: return@withContext false
-        runCatching {
-            if (root.findFile(fileName) != null) return@withContext true // 已备份过
-            val doc = root.createFile("audio/mp4a-latm", fileName) ?: return@withContext false
-            // 个别文件提供器会补/改扩展名, 保证最终文件名一致, 便于后续按名查找.
-            if (doc.name != fileName) runCatching { doc.renameTo(fileName) }
-            val out = context.contentResolver.openOutputStream(doc.uri, "w") ?: return@withContext false
-            out.use { dst -> src.inputStream().use { it.copyTo(dst) } }
-            true
-        }.getOrDefault(false)
+        if (Build.VERSION.SDK_INT >= 29) copyViaMediaStore(context, src, fileName) else copyViaFile(src, fileName)
     }
+
+    private fun copyViaMediaStore(context: Context, src: File, fileName: String): Boolean = runCatching {
+        if (findViaMediaStore(context, fileName) != null) return@runCatching true // 已备份过
+        val values = ContentValues().apply {
+            put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4a-latm")
+            put(MediaStore.Audio.Media.RELATIVE_PATH, "$RELATIVE_PATH/")
+            put(MediaStore.Audio.Media.IS_PENDING, 1)
+        }
+        val uri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+            ?: return@runCatching false
+        val wrote = context.contentResolver.openOutputStream(uri)?.use { dst ->
+            src.inputStream().use { it.copyTo(dst) }
+        } != null
+        // 写入完成后清除 IS_PENDING, 让系统媒体库可见.
+        values.clear()
+        values.put(MediaStore.Audio.Media.IS_PENDING, 0)
+        context.contentResolver.update(uri, values, null, null)
+        wrote
+    }.getOrDefault(false)
+
+    private fun copyViaFile(src: File, fileName: String): Boolean = runCatching {
+        val dir = legacyDir()
+        dir.mkdirs()
+        val dest = File(dir, fileName)
+        if (dest.exists()) return@runCatching true
+        src.copyTo(dest)
+        true
+    }.getOrDefault(false)
 
     /** 删除备份文件夹中的指定文件. */
     suspend fun deletePublic(context: Context, fileName: String): Boolean = withContext(Dispatchers.IO) {
-        val root = root(context) ?: return@withContext false
-        runCatching { root.findFile(fileName)?.delete() ?: false }.getOrDefault(false)
+        if (Build.VERSION.SDK_INT >= 29) {
+            val uri = findViaMediaStore(context, fileName) ?: return@withContext false
+            runCatching { context.contentResolver.delete(uri, null, null) > 0 }.getOrDefault(false)
+        } else {
+            runCatching { File(legacyDir(), fileName).delete() }.getOrDefault(false)
+        }
     }
+
+    /** 按文件名在 MediaStore 中查找条目 (API 29+). */
+    private fun findViaMediaStore(context: Context, fileName: String): Uri? = runCatching {
+        val projection = arrayOf(MediaStore.Audio.Media._ID)
+        val selection = "${MediaStore.Audio.Media.RELATIVE_PATH} = ? AND ${MediaStore.Audio.Media.DISPLAY_NAME} = ?"
+        val args = arrayOf("$RELATIVE_PATH/", fileName)
+        var found: Uri? = null
+        context.contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            projection, selection, args, null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                found = ContentUris.withAppendedId(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)),
+                )
+            }
+        }
+        found
+    }.getOrNull()
 }

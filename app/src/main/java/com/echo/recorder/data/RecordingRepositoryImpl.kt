@@ -32,7 +32,10 @@ class RecordingRepositoryImpl(
             ?: throw NoSuchElementException("Recording not found: $id")
 
     override suspend fun create(file: File, durationMs: Long): Recording =
-        ds.upsert(file, durationMs, System.currentTimeMillis())
+        create(file, durationMs, System.currentTimeMillis())
+
+    override suspend fun create(file: File, durationMs: Long, createdAt: Long): Recording =
+        ds.upsert(file, durationMs, createdAt)
 
     override suspend fun delete(id: String): Boolean = ds.delete(id)
 
@@ -41,6 +44,9 @@ class RecordingRepositoryImpl(
 
     override suspend fun setCategory(id: String, category: RecordingCategory): Recording? =
         ds.setCategory(id, category)
+
+    override suspend fun rename(id: String, newName: String): Recording? =
+        ds.rename(id, newName)
 
     /** 所有虚引用. */
     fun virtualRefsFlow(): Flow<List<Recording>> = virtualRefs?.refs ?: flowOf(emptyList())

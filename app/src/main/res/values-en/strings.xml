@@ -6,6 +6,7 @@
     <string name="unlock">Unlock</string>
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
+    <string name="rename">Rename</string>
     <string name="close">Close</string>
     <string name="delete">Delete</string>
     <string name="save">Save</string>
@@ -208,10 +209,10 @@
     <string name="import_no_new">No new files to import</string>
     <string name="public_dir_delete_note">This permanently deletes the original file in the backup folder. It cannot be undone. Recordings inside the app are not affected.</string>
     <string name="public_dir_files_subtitle">View files in the backup folder</string>
-    <string name="public_dir_choose_folder">Choose backup folder</string>
-    <string name="public_dir_choose_folder_note">Pick a folder for automatic recording backup (the system Download folder is recommended). Recordings are backed up to a safe location and survive app uninstall.</string>
+    <string name="public_dir_choose_folder">Allow access</string>
+    <string name="public_dir_choose_folder_note">Recordings are automatically backed up to a safe location in the system Download folder and survive app uninstall. Allow access to continue.</string>
     <string name="public_dir_backup_pending_title">Backup folder needed</string>
-    <string name="public_dir_backup_pending_text">Some recordings have not been backed up yet. Once you choose a backup folder, recordings are backed up automatically and survive app uninstall.</string>
+    <string name="public_dir_backup_pending_text">Some recordings have not been backed up yet. Once you allow access, recordings are backed up automatically and survive app uninstall.</string>
     <string name="not_now">Not now</string>
 
     <!-- About -->

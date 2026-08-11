@@ -192,6 +192,25 @@ class FilesystemRecordingDataSource(
         return moved
     }
 
+    /**
+     * 重命名录音: 改物理文件名 + 更新记录 (id/displayName/fileUrl 同步).
+     * 新名自动补 .m4a 扩展名; 重名冲突或失败返回 null.
+     */
+    override fun rename(id: String, newName: String): Recording? {
+        val target = _state.value.firstOrNull { it.id == id } ?: return null
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return null
+        val safeName = if (trimmed.endsWith(".m4a", ignoreCase = true)) trimmed else "$trimmed.m4a"
+        val src = File(java.net.URI(target.fileUrl))
+        val dest = File(src.parentFile, safeName)
+        if (dest.exists()) return null // 重名冲突, 拒绝.
+        val ok = runCatching { src.renameTo(dest) }.getOrDefault(false)
+        if (!ok) return null
+        val renamed = target.copy(id = dest.name, displayName = dest.name, fileUrl = dest.toURI().toString())
+        _state.value = _state.value.map { if (it.id == id) renamed else it }
+        return renamed
+    }
+
     /** 由物理路径反推分类. */
     private fun categoryOf(file: File): RecordingCategory {
         val parent = file.parentFile?.name ?: return RecordingCategory.TEMPORARY

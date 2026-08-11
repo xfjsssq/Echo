@@ -28,4 +28,7 @@ interface RecordingDataSource {
 
     /** 把一条录音在临时/长期之间移动 (改物理目录 + 改分类). 返回新 Recording. */
     fun setCategory(id: String, category: RecordingCategory): Recording?
+
+    /** 重命名录音 (改物理文件名 + 更新记录). 成功返回新 Recording, 失败=null. */
+    fun rename(id: String, newName: String): Recording?
 }
