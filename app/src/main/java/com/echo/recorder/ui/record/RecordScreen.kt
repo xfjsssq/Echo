@@ -1,5 +1,6 @@
 package com.echo.recorder.ui.record
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -10,6 +11,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -289,31 +294,42 @@ fun RecordScreen(
                 // 暗黑主题检测 (用于 logo 边缘渐隐 / 按钮配色)
                 val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
-                when (state.phase) {
-                    RecordingService.Phase.IDLE -> IdleContent(
-                        hasPermission = state.hasPermission,
-                        darkTheme = isDark,
-                        onStart = {
-                            if (!state.hasPermission) onRequestPermission()
-                            else viewModel.onStartPressed()
-                        },
-                    )
-                    RecordingService.Phase.BUFFERING -> BufferingContent(
-                        amplitude = amplitude,
-                        animPhase = animPhase,
-                        dropProgress = dropProgress.value,
-                        waveReveal = waveReveal.value,
-                        logoReturn = logoReturn.value,
-                        screenWidthPx = screenWidthPx,
-                        screenHeightPx = screenHeightPx,
-                        onPause = { viewModel.onPausePressed() },
-                        saving = state.saving,
-                    )
-                    RecordingService.Phase.REVIEW -> ReviewContent(
-                        darkTheme = isDark,
-                        onSave = { viewModel.onSavePressed() },
-                        onDelete = { verifyDelete = true },
-                    )
+                // 阶段切换交叉淡化 (IDLE ⇄ BUFFERING ⇄ REVIEW), 轻微缩放避免生硬
+                AnimatedContent(
+                    targetState = state.phase,
+                    transitionSpec = {
+                        (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                            scaleIn(initialScale = 0.985f, animationSpec = tween(300, easing = FastOutSlowInEasing))) togetherWith
+                            fadeOut(tween(220))
+                    },
+                    label = "record_phase",
+                ) { phase ->
+                    when (phase) {
+                        RecordingService.Phase.IDLE -> IdleContent(
+                            hasPermission = state.hasPermission,
+                            darkTheme = isDark,
+                            onStart = {
+                                if (!state.hasPermission) onRequestPermission()
+                                else viewModel.onStartPressed()
+                            },
+                        )
+                        RecordingService.Phase.BUFFERING -> BufferingContent(
+                            amplitude = amplitude,
+                            animPhase = animPhase,
+                            dropProgress = dropProgress.value,
+                            waveReveal = waveReveal.value,
+                            logoReturn = logoReturn.value,
+                            screenWidthPx = screenWidthPx,
+                            screenHeightPx = screenHeightPx,
+                            onPause = { viewModel.onPausePressed() },
+                            saving = state.saving,
+                        )
+                        RecordingService.Phase.REVIEW -> ReviewContent(
+                            darkTheme = isDark,
+                            onSave = { viewModel.onSavePressed() },
+                            onDelete = { verifyDelete = true },
+                        )
+                    }
                 }
 
                 ExitButton(
@@ -474,12 +490,12 @@ private fun BufferingContent(
                 )
             }
         } else {
-            // ── 流体能量区域 (Logo 消失后才出现, 占 42%底部, 光从 logo 消失处晕开) ──
+            // ── 流体能量区域 (Logo 消失后才出现, 占 38%底部, 光从 logo 消失处晕开) ──
             if (animPhase == AnimPhase.VISUALIZER) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(0.42f)
+                        .fillMaxHeight(0.38f)
                         .align(Alignment.BottomCenter)
                         // 只做 alpha 淡入 — 扩散由 blob 自身的半径增长完成,
                         // 不再对矩形容器做 scaleX 展开 (那是"矩形摊开"的元凶).

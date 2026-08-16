@@ -1,5 +1,13 @@
 package com.echo.recorder.ui.onboarding
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -96,7 +104,6 @@ fun OnboardingScreen(
     onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     var index by remember { mutableIntStateOf(0) }
-    val card = CARDS[index]
 
     Dialog(
         onDismissRequest = { /* 引导卡片通过右上角 × 或完成按钮关闭 */ },
@@ -139,70 +146,93 @@ fun OnboardingScreen(
                     }
                 }
 
-                // 每个卡片的图标徽章 (渐变背景 + 大图标), 呼应猫咪图标风格.
-                val icon: ImageVector = cardIcon(card.type)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.secondaryContainer,
+                // 卡片主体: 徽章 + 圆点 + 内容 — 步骤切换时方向感知滑动过渡
+                AnimatedContent(
+                    targetState = index,
+                    transitionSpec = {
+                        if (targetState > initialState) {
+                            // 前进: 新卡从右侧滑入
+                            (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                                slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { it / 5 }) togetherWith
+                                (fadeOut(tween(200)) +
+                                    slideOutHorizontally(animationSpec = tween(200)) { -it / 5 })
+                        } else {
+                            // 后退: 新卡从左侧滑入
+                            (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                                slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -it / 5 }) togetherWith
+                                (fadeOut(tween(200)) +
+                                    slideOutHorizontally(animationSpec = tween(200)) { it / 5 })
+                        }
+                    },
+                    label = "onboarding_card",
+                ) { i ->
+                    val card = CARDS[i]
+
+                    // 每个卡片的图标徽章 (渐变背景 + 大图标), 呼应猫咪图标风格.
+                    val icon: ImageVector = cardIcon(card.type)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.primaryContainer,
+                                        MaterialTheme.colorScheme.secondaryContainer,
+                                    )
                                 )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                        modifier = Modifier.size(104.dp),
+                            ),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                icon,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(52.dp),
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                            modifier = Modifier.size(104.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    icon,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(52.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    // 页面指示圆点.
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        repeat(CARDS.size) { dot ->
+                            Box(
+                                modifier = Modifier
+                                    .size(if (dot == i) 8.dp else 6.dp)
+                                    .background(
+                                        if (dot == i) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outlineVariant,
+                                        CircleShape,
+                                    ),
                             )
                         }
                     }
-                }
 
-                // 页面指示圆点.
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    repeat(CARDS.size) { i ->
-                        Box(
-                            modifier = Modifier
-                                .size(if (i == index) 8.dp else 6.dp)
-                                .background(
-                                    if (i == index) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outlineVariant,
-                                    CircleShape,
-                                ),
+                    // 内容区.
+                    when (card.type) {
+                        OnboardingCardType.THEME -> ThemeCardContent(
+                            titleRes = card.titleRes,
+                            textRes = card.textRes,
+                            selected = themeMode,
+                            onSelect = onThemeChange,
+                            onFinish = onFinish,
+                        )
+                        else -> PlainCardContent(
+                            card = card,
                         )
                     }
-                }
-
-                // 内容区.
-                when (card.type) {
-                    OnboardingCardType.THEME -> ThemeCardContent(
-                        titleRes = card.titleRes,
-                        textRes = card.textRes,
-                        selected = themeMode,
-                        onSelect = onThemeChange,
-                        onFinish = onFinish,
-                    )
-                    else -> PlainCardContent(
-                        card = card,
-                    )
                 }
 
                 // 底部导航: 上一步 / 下一步 / 完成.

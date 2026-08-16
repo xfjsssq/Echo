@@ -1,5 +1,12 @@
 package com.echo.recorder.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +48,36 @@ fun EchoNavHost(
     NavHost(
         navController = navController,
         startDestination = EchoRoutes.RECORD,
+        // ── 页面切换动效 (iOS 风格 push/pop, 克制不抢戏) ──
+        // 前进: 新页从右 1/4 屏滑入 + 淡入 + 微缩放; 旧页向左淡出
+        enterTransition = {
+            slideIntoContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                animationSpec = tween(320, easing = FastOutSlowInEasing),
+            ) + fadeIn(tween(320, easing = FastOutSlowInEasing)) +
+                scaleIn(initialScale = 0.985f, animationSpec = tween(320, easing = FastOutSlowInEasing))
+        },
+        exitTransition = {
+            slideOutOfContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                animationSpec = tween(260, easing = FastOutSlowInEasing),
+            ) + fadeOut(tween(200))
+        },
+        // 返回: 当前页向右滑出, 上一页从左侧滑回
+        popEnterTransition = {
+            slideIntoContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(320, easing = FastOutSlowInEasing),
+            ) + fadeIn(tween(320, easing = FastOutSlowInEasing)) +
+                scaleIn(initialScale = 0.985f, animationSpec = tween(320, easing = FastOutSlowInEasing))
+        },
+        popExitTransition = {
+            slideOutOfContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(260, easing = FastOutSlowInEasing),
+            ) + fadeOut(tween(200)) +
+                scaleOut(targetScale = 0.985f, animationSpec = tween(260, easing = FastOutSlowInEasing))
+        },
     ) {
         composable(EchoRoutes.RECORD) {
             RecordScreen(

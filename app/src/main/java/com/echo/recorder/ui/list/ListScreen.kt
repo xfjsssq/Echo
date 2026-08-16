@@ -2,6 +2,16 @@ package com.echo.recorder.ui.list
 
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,6 +97,7 @@ import com.echo.recorder.playback.DefaultAudioPlayerFactory
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.share.ShareHelper
 import com.echo.recorder.ui.common.FeatheredOrbIcon
+import com.echo.recorder.ui.common.animatedListEntrance
 import com.echo.recorder.ui.common.rememberPublicDirGrant
 import com.echo.recorder.ui.formatElapsed
 import com.echo.recorder.ui.lock.PasswordPromptDialog
@@ -181,7 +193,18 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
             }
         },
         bottomBar = {
-            if (state.selectionMode) {
+            AnimatedVisibility(
+                visible = state.selectionMode,
+                enter = slideInVertically(
+                    animationSpec = tween(280, easing = FastOutSlowInEasing),
+                    initialOffsetY = { it },
+                ) + fadeIn(tween(220)),
+                exit = slideOutVertically(
+                    animationSpec = tween(240),
+                    targetOffsetY = { it },
+                ) + fadeOut(tween(180)),
+                label = "batch_bar",
+            ) {
                 BatchBottomBar(
                     count = state.selected.size,
                     onDelete = { verifyBatchDelete = true },
@@ -192,19 +215,26 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
         },
     ) { padding ->
         if (items.isEmpty()) {
-            EmptyList(recordingTab = state.tab)
+            EmptyList(
+                recordingTab = state.tab,
+                modifier = Modifier.animatedListEntrance(index = 0, withBlur = false),
+            )
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = listState) {
                 // 临时录音提示条: 提醒 24h 自动删除
                 if (state.tab == ListTab.TEMPORARY) {
                     item(key = "temp_expiry_hint") {
-                        TempExpiryHint()
+                        TempExpiryHint(modifier = Modifier.animatedListEntrance(index = 0, withBlur = false))
                     }
                 }
-                items(flat, key = { it.key }) { entry ->
+                itemsIndexed(flat, key = { _, entry -> entry.key }) { index, entry ->
                     if (entry.isHeader) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .animateItemPlacement()
+                                .animatedListEntrance(index = index, withBlur = false),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
@@ -227,6 +257,9 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                         val rec = entry.rec!!
                         RecordingRow(
                             rec = rec,
+                            modifier = Modifier
+                                .animateItemPlacement()
+                                .animatedListEntrance(index = index),
                             expanded = state.expandedId == rec.id,
                             selectionMode = state.selectionMode,
                             selected = rec.id in state.selected,
@@ -612,6 +645,7 @@ private fun CalendarDialog(
 @Composable
 private fun RecordingRow(
     rec: Recording,
+    modifier: Modifier = Modifier,
     expanded: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
@@ -633,16 +667,23 @@ private fun RecordingRow(
     val isEmpty = rec.durationMs < MIN_PLAYABLE_MS
     val isCorrupted = isEmpty && fileExists && fileSize > 0
 
+    // 选中/展开状态背景色平滑过渡, 避免跳变
+    val rowBg by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.secondaryContainer
+            expanded -> MaterialTheme.colorScheme.surfaceVariant
+            else -> MaterialTheme.colorScheme.surfaceContainer
+        },
+        animationSpec = tween(240),
+        label = "row_bg",
+    )
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp)
             .clip(shape = RoundedCornerShape(16.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.secondaryContainer
-                else if (expanded) MaterialTheme.colorScheme.surfaceVariant
-                else MaterialTheme.colorScheme.surfaceContainer
-            )
+            .background(rowBg)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -707,12 +748,22 @@ private fun RecordingRow(
             }
         }
 
-        if (expanded) {
-            Divider(
-                modifier = Modifier.padding(top = 8.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            if (isEmpty) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(
+                animationSpec = tween(280, easing = FastOutSlowInEasing),
+            ) + fadeIn(tween(220)),
+            exit = shrinkVertically(
+                animationSpec = tween(240),
+            ) + fadeOut(tween(160)),
+            label = "row_expand",
+        ) {
+            Column {
+                Divider(
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                if (isEmpty) {
                 Row(
                     modifier = Modifier.padding(top = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -743,6 +794,7 @@ private fun RecordingRow(
                     onDelete = onDelete,
                     onShare = onShare,
                 )
+            }
             }
         }
     }
@@ -922,9 +974,9 @@ private fun startOfDayFromLocal(date: LocalDate): Long =
 
 /** 空列表占位: 图标 + 文案. */
 @Composable
-private fun EmptyList(recordingTab: ListTab) {
+private fun EmptyList(recordingTab: ListTab, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
+        modifier = modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -964,9 +1016,9 @@ private fun EmptyList(recordingTab: ListTab) {
 
 /** 临时录音自动删除提示条 (仅临时 tab 顶部显示). */
 @Composable
-private fun TempExpiryHint() {
+private fun TempExpiryHint(modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(12.dp))

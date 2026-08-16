@@ -16,14 +16,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.floor
@@ -31,18 +35,16 @@ import kotlin.math.pow
 import kotlin.random.Random
 
 /**
- * Gemini Live 风格音频能量幕 (V14 — 黄蓝渐变光源波浪).
+ * Gemini Live 风格音频能量幕 (V15 — 漂浮光带 + 镜面倒影).
  *
- * 在 V13 架构 (形态层/能量层解耦 + 动态中间值对比度响应) 之上:
- * 1. **引导卡片同款黄蓝渐变** — 颜色改用 primaryContainer(暖黄) →
- *    secondaryContainer(冷蓝) 纵向渐变: 底部暖黄、顶部冷蓝淡出;
- *    与引导卡片徽章背景同源, 暗/亮主题自动适配.
- * 2. **波谷不触底** — 底部软地板 (0.28 阈值 + 0.35 压缩 + 0.16 绝对下限),
- *    波谷永远悬在底边之上, 不贴死.
- * 3. **波峰整体降低** — maxH 0.56 → 0.45, 峰值上限 1.25 → 1.1,
- *    不再顶到容器上部.
- * 4. 保留: 三峰独立随机游走、动态中间值对称拉伸、快攻快放、光源泛光、
- *    顶部无分界线、左右填满、噪点、reveal.
+ * 在 V13 架构 (形态层/能量层解耦 + 动态中间值对比度响应) 之上全面整改视觉语言:
+ * 不再"水位线填满", 改为一条随能量呼吸的**漂浮光带**:
+ * 1. **漂浮光带** — 波形以圆头渐变描边呈现 (底部暖黄 → 顶部冷蓝),
+ *    线宽随能量 2.2dp→7.7dp 呼吸, 悬浮于容器中下部, 不贴底不顶天.
+ * 2. **镜面倒影** — 光带下方镜像一条淡出的倒影 (纵向渐变 + 模糊),
+ *    像立在镜面水面上, 增加纵深与质感.
+ * 3. **光源泛光** — 光带外侧大半径柔光, 顶部无硬边.
+ * 4. 保留: 三峰独立随机游走、动态中间值对称拉伸、快攻快放、噪点、reveal.
  *
  * @param amplitude 实时感知振幅 0.0-1.0
  * @param waveColor 兼容保留 (颜色已由黄蓝渐变取代, 不再使用)
@@ -85,9 +87,10 @@ fun FluidWaveform(
         }
     }
 
-    // 泛光用画刷 (每帧只换 shader, 复用对象避免 GC 抖动)
+    // 泛光 / 光带 / 倒影 用画刷 (每帧只换 shader, 复用对象避免 GC 抖动)
     val glowPaint = remember { Paint() }
     val corePaint = remember { Paint() }
+    val reflPaint = remember { Paint() }
 
     // 始终读取最新参数
     val currentAmplitude by rememberUpdatedState(amplitude)
@@ -177,10 +180,9 @@ fun FluidWaveform(
         val warm = lerp(currentBg, warmBase, mix)   // 底部暖黄
         val cool = lerp(currentBg, coolBase, mix)   // 顶部冷蓝
 
-        // 渐变上界在可能最高峰之上 → 顶部永远先淡出, 不会露出硬边
-        val maxH = h * 0.45f
-        val gradTop = h - maxH * 1.25f
-        val baseY = h // 底边贴容器底部 → 填满底部, 无空隙
+        // ── 漂浮光带布局: 基线在 0.52h, 峰顶最高 0.06h, 下方留出倒影区 ──
+        val baseY = h * 0.52f
+        val maxH = h * 0.46f
         val step = w / (N - 1f)   // 全宽铺满: 首顶点 x=0, 末顶点 x=w
 
         // 顶点: 覆盖整个宽度, 顶 y 由缓动高度决定
@@ -189,71 +191,92 @@ fun FluidWaveform(
             Offset(step * i, baseY - hh)
         }
 
-        // 连续轮廓: 左缘 → 平滑曲线穿过全部顶点 → 右缘 → 底边闭合
         // Catmull-Rom → 三次贝塞尔: 顶点间 C1 连续, 曲线圆滑无折角
-        val path = Path()
-        path.moveTo(0f, baseY)
-        path.lineTo(pts[0].x, pts[0].y)
-        for (i in 0 until N - 1) {
-            val p0 = pts[(i - 1).coerceAtLeast(0)]
-            val p1 = pts[i]
-            val p2 = pts[i + 1]
-            val p3 = pts[(i + 2).coerceAtMost(N - 1)]
-            val c1 = Offset(p1.x + (p2.x - p0.x) / 6f, p1.y + (p2.y - p0.y) / 6f)
-            val c2 = Offset(p2.x - (p3.x - p1.x) / 6f, p2.y - (p3.y - p1.y) / 6f)
-            path.cubicTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y)
+        fun buildPath(p: List<Offset>): Path {
+            val path = Path()
+            path.moveTo(p[0].x, p[0].y)
+            for (i in 0 until N - 1) {
+                val p0 = p[(i - 1).coerceAtLeast(0)]
+                val p1 = p[i]
+                val p2 = p[i + 1]
+                val p3 = p[(i + 2).coerceAtMost(N - 1)]
+                val c1 = Offset(p1.x + (p2.x - p0.x) / 6f, p1.y + (p2.y - p0.y) / 6f)
+                val c2 = Offset(p2.x - (p3.x - p1.x) / 6f, p2.y - (p3.y - p1.y) / 6f)
+                path.cubicTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y)
+            }
+            return path
         }
-        path.lineTo(w, baseY)
-        path.close()
+        val path = buildPath(pts)
 
-        // ── 光源式泛光: 波形像发光体, 上方也有光亮 ──
+        // 镜面倒影: 关于基线镜像 (0.85 系数收敛, 倒影略短于本体, 不溢出底边)
+        val reflPts = pts.map { pt ->
+            val dy = baseY - pt.y
+            Offset(pt.x, baseY + dy * 0.85f)
+        }
+        val reflPath = buildPath(reflPts)
 
-        // 1) 大范围柔光 (强模糊) — 主泛光, 盖掉顶部任何边界
+        // 能量包络 (驱动线宽/泛光强度, 也保持 Canvas 的逐帧订阅)
+        val env = smoothAmp.floatValue
+
+        // 渐变上界在可能最高峰之上 → 顶部永远先淡出, 不会露出硬边
+        val gradTop = baseY - maxH * 1.15f
+
+        // 线宽: 随能量呼吸 (2.2dp 静默 → 7.7dp 强声)
+        val coreWidth = (2.2f + 5.5f * env).dp.toPx()
+
+        // ── 1) 镜面倒影: 下方镜像 + 纵向渐变淡出 + 模糊 ──
+        reflPaint.shader = android.graphics.LinearGradient(
+            0f, baseY, 0f, h,
+            intArrayOf(
+                lerp(warm, cool, 0.5f).copy(alpha = 0f).toArgb(),
+                warm.copy(alpha = (if (isDark) 0.10f else 0.16f) * r).toArgb(),
+            ),
+            floatArrayOf(0f, 1f),
+            android.graphics.Shader.TileMode.CLAMP,
+        )
+        reflPaint.style = PaintingStyle.Stroke
+        reflPaint.strokeWidth = coreWidth * 0.85f
+        reflPaint.strokeCap = StrokeCap.Round
+        reflPaint.asFrameworkPaint().maskFilter =
+            android.graphics.BlurMaskFilter(w * 0.030f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+        drawContext.canvas.drawPath(reflPath, reflPaint)
+
+        // ── 2) 光源泛光: 宽描边大模糊 (光带像发光体) ──
         glowPaint.shader = android.graphics.LinearGradient(
             0f, gradTop, 0f, baseY,
             intArrayOf(
-                Color.Transparent.toArgb(),
-                lerp(warm, cool, 0.45f).copy(alpha = 0.30f * r).toArgb(),
-                warm.copy(alpha = 0.45f * r).toArgb(),
+                cool.copy(alpha = 0.16f * r).toArgb(),
+                warm.copy(alpha = 0.30f * r).toArgb(),
             ),
-            floatArrayOf(0f, 0.5f, 1f),
+            floatArrayOf(0f, 1f),
             android.graphics.Shader.TileMode.CLAMP,
         )
+        glowPaint.style = PaintingStyle.Stroke
+        glowPaint.strokeWidth = coreWidth * 3.4f
+        glowPaint.strokeCap = StrokeCap.Round
         glowPaint.asFrameworkPaint().maskFilter =
-            android.graphics.BlurMaskFilter(w * 0.050f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+            android.graphics.BlurMaskFilter(w * 0.045f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         drawContext.canvas.drawPath(path, glowPaint)
 
-        // 2) 紧凑光芯 (小模糊) — 波形本体有发光感
+        // ── 3) 主光带: 渐变圆头描边 (底部暖黄 → 顶部冷蓝) ──
         corePaint.shader = android.graphics.LinearGradient(
             0f, gradTop, 0f, baseY,
             intArrayOf(
-                Color.Transparent.toArgb(),
-                lerp(warm, cool, 0.5f).copy(alpha = 0.22f * r).toArgb(),
-                warm.copy(alpha = 0.50f * r).toArgb(),
+                cool.copy(alpha = 0.90f * r).toArgb(),
+                warm.copy(alpha = 0.95f * r).toArgb(),
             ),
-            floatArrayOf(0f, 0.6f, 1f),
+            floatArrayOf(0f, 1f),
             android.graphics.Shader.TileMode.CLAMP,
         )
+        corePaint.style = PaintingStyle.Stroke
+        corePaint.strokeWidth = coreWidth
+        corePaint.strokeCap = StrokeCap.Round
+        corePaint.strokeJoin = StrokeJoin.Round
         corePaint.asFrameworkPaint().maskFilter =
-            android.graphics.BlurMaskFilter(w * 0.015f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+            android.graphics.BlurMaskFilter(w * 0.010f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         drawContext.canvas.drawPath(path, corePaint)
 
-        // 3) 主体: 清晰渐变填充 — 顶部在最高峰之上淡出, 底部实色
-        drawPath(
-            path = path,
-            brush = Brush.verticalGradient(
-                colorStops = arrayOf(
-                    0.0f to cool.copy(alpha = 0.0f),                                    // 顶部: 冷蓝淡出 (无硬边)
-                    0.30f to lerp(warm, cool, 0.65f).copy(alpha = 0.20f * r),
-                    0.70f to lerp(warm, cool, 0.35f).copy(alpha = 0.55f * r),
-                    1.0f to warm.copy(alpha = (if (isDark) 0.55f else 0.88f) * r),      // 底部: 暖黄实色
-                ),
-                startY = gradTop,
-                endY = baseY,
-            ),
-        )
-
-        // 4) 极淡噪点: 增质感, 让渐变过渡更平滑 (保留极光颗粒感)
+        // ── 4) 极淡噪点: 增质感, 让渐变过渡更平滑 (保留极光颗粒感) ──
         drawContext.canvas.drawRect(0f, 0f, w, h, noisePaint)
     }
 }
