@@ -31,21 +31,21 @@ import kotlin.math.pow
 import kotlin.random.Random
 
 /**
- * Gemini Live 风格音频能量幕 (V13 — 三峰独立随机游走 + 对比度响应).
+ * Gemini Live 风格音频能量幕 (V14 — 黄蓝渐变光源波浪).
  *
- * 从第一性原理重构 (不再调参):
- * 1. **形态层 / 能量层彻底解耦** — 形态由 3 个高斯峰的幅度/宽度/位置
- *    独立随机游走驱动 (互不相关、永不重复, 严格 ≤3 波峰); 音频只通过
- *    "对比度"通道影响形态, 不直接推顶点 → 架构上杜绝齐上齐下.
- * 2. **动态中间值对称拉伸** — 每帧算当前高度中位数, 围绕它对称拉伸:
- *    峰更高、谷更低, 中间值本身不动 → 高者上冲低者下压, 差距夸张.
- * 3. **快攻快放 + 灵敏度压缩** — 包络 attack 0.75 / release 0.50,
- *    振幅 ^0.6 压缩 → 小音量灵敏、大音量不炸, 响应即时不慵懒.
- * 4. **静止灵动** — env=0 时形态本身持续演化, 微呼吸不呆板.
- * 5. 保留: 光源泛光、顶部无分界线、左右填满、噪点、reveal、颜色混比.
+ * 在 V13 架构 (形态层/能量层解耦 + 动态中间值对比度响应) 之上:
+ * 1. **引导卡片同款黄蓝渐变** — 颜色改用 primaryContainer(暖黄) →
+ *    secondaryContainer(冷蓝) 纵向渐变: 底部暖黄、顶部冷蓝淡出;
+ *    与引导卡片徽章背景同源, 暗/亮主题自动适配.
+ * 2. **波谷不触底** — 底部软地板 (0.28 阈值 + 0.35 压缩 + 0.16 绝对下限),
+ *    波谷永远悬在底边之上, 不贴死.
+ * 3. **波峰整体降低** — maxH 0.56 → 0.45, 峰值上限 1.25 → 1.1,
+ *    不再顶到容器上部.
+ * 4. 保留: 三峰独立随机游走、动态中间值对称拉伸、快攻快放、光源泛光、
+ *    顶部无分界线、左右填满、噪点、reveal.
  *
  * @param amplitude 实时感知振幅 0.0-1.0
- * @param waveColor 波形主色 (推荐主题 primary)
+ * @param waveColor 兼容保留 (颜色已由黄蓝渐变取代, 不再使用)
  * @param reveal 出现进度 0→1
  * @param backgroundColor 所在区域背景色, 用于混合柔化, 消除割裂感
  */
@@ -97,6 +97,10 @@ fun FluidWaveform(
     // 明亮主题: 混色少 → 颜色突出; 暗黑主题: 混色多 → 柔和
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
+    // 引导卡片同款黄蓝渐变端点 (主题容器色, 需在组合作用域读取)
+    val warmTheme = MaterialTheme.colorScheme.primaryContainer   // 暖黄
+    val coolTheme = MaterialTheme.colorScheme.secondaryContainer // 冷蓝
+
     // ── 逐帧更新: 三峰形状 + 动态中间值差分音频响应 ──
     LaunchedEffect(Unit) {
         while (true) {
@@ -143,9 +147,15 @@ fun FluidWaveform(
 
             for (i in 0 until N) {
                 val stretched = mid + (shape[i] - mid) * contrast
-                // 软膝: 顶部渐近无硬线; 底部保底不贴死
-                val kneed = if (stretched > 0.85f) 0.85f + (stretched - 0.85f) * 0.28f else stretched
-                val targetH = kneed.coerceIn(0.02f, 1.25f)
+                // 双软膝: 顶部渐近无硬线; 底部软地板 — 波谷永远悬在底边之上, 不触底
+                val kneed = if (stretched > 0.85f) {
+                    0.85f + (stretched - 0.85f) * 0.28f
+                } else if (stretched < 0.28f) {
+                    0.28f + (stretched - 0.28f) * 0.35f
+                } else {
+                    stretched
+                }
+                val targetH = kneed.coerceIn(0.16f, 1.1f)
 
                 val cur = heights[i]
                 heights[i] = cur + (targetH - cur) * 0.45f
@@ -158,22 +168,24 @@ fun FluidWaveform(
         val h = size.height
         val r = currentReveal.coerceIn(0f, 1f)
 
-        // 白 → 主题色 (前 25% 保持纯白衔接白球消散)
+        // 白 → 引导卡片同款黄蓝渐变 (前 25% 保持纯白衔接白球消散)
         val cr = ((r - 0.25f) / 0.75f).coerceIn(0f, 1f)
-        val base = lerp(Color.White, waveColor, cr)
+        val warmBase = lerp(Color.White, warmTheme, cr)   // 暖黄端点
+        val coolBase = lerp(Color.White, coolTheme, cr)   // 冷蓝端点
         // 与背景混合: 明亮主题少混 → 颜色突出; 暗黑主题多混 → 柔和
         val mix = if (isDark) 0.55f else 0.85f
-        val solid = lerp(currentBg, base, mix)
+        val warm = lerp(currentBg, warmBase, mix)   // 底部暖黄
+        val cool = lerp(currentBg, coolBase, mix)   // 顶部冷蓝
 
         // 渐变上界在可能最高峰之上 → 顶部永远先淡出, 不会露出硬边
-        val maxH = h * 0.56f
+        val maxH = h * 0.45f
         val gradTop = h - maxH * 1.25f
         val baseY = h // 底边贴容器底部 → 填满底部, 无空隙
         val step = w / (N - 1f)   // 全宽铺满: 首顶点 x=0, 末顶点 x=w
 
         // 顶点: 覆盖整个宽度, 顶 y 由缓动高度决定
         val pts = List(N) { i ->
-            val hh = maxH * heights[i].coerceIn(0f, 1.25f) * r
+            val hh = maxH * heights[i].coerceIn(0f, 1.1f) * r
             Offset(step * i, baseY - hh)
         }
 
@@ -201,8 +213,8 @@ fun FluidWaveform(
             0f, gradTop, 0f, baseY,
             intArrayOf(
                 Color.Transparent.toArgb(),
-                solid.copy(alpha = 0.30f * r).toArgb(),
-                solid.copy(alpha = 0.45f * r).toArgb(),
+                lerp(warm, cool, 0.45f).copy(alpha = 0.30f * r).toArgb(),
+                warm.copy(alpha = 0.45f * r).toArgb(),
             ),
             floatArrayOf(0f, 0.5f, 1f),
             android.graphics.Shader.TileMode.CLAMP,
@@ -216,8 +228,8 @@ fun FluidWaveform(
             0f, gradTop, 0f, baseY,
             intArrayOf(
                 Color.Transparent.toArgb(),
-                solid.copy(alpha = 0.22f * r).toArgb(),
-                solid.copy(alpha = 0.50f * r).toArgb(),
+                lerp(warm, cool, 0.5f).copy(alpha = 0.22f * r).toArgb(),
+                warm.copy(alpha = 0.50f * r).toArgb(),
             ),
             floatArrayOf(0f, 0.6f, 1f),
             android.graphics.Shader.TileMode.CLAMP,
@@ -231,10 +243,10 @@ fun FluidWaveform(
             path = path,
             brush = Brush.verticalGradient(
                 colorStops = arrayOf(
-                    0.0f to Color.Transparent,
-                    0.28f to solid.copy(alpha = 0.22f * r),
-                    0.70f to solid.copy(alpha = 0.55f * r),
-                    1.0f to solid.copy(alpha = (if (isDark) 0.55f else 0.88f) * r),
+                    0.0f to cool.copy(alpha = 0.0f),                                    // 顶部: 冷蓝淡出 (无硬边)
+                    0.30f to lerp(warm, cool, 0.65f).copy(alpha = 0.20f * r),
+                    0.70f to lerp(warm, cool, 0.35f).copy(alpha = 0.55f * r),
+                    1.0f to warm.copy(alpha = (if (isDark) 0.55f else 0.88f) * r),      // 底部: 暖黄实色
                 ),
                 startY = gradTop,
                 endY = baseY,
