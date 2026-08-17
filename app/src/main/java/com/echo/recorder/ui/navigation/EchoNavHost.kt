@@ -1,7 +1,7 @@
 package com.echo.recorder.ui.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,6 +30,12 @@ import com.echo.recorder.ui.record.RecordViewModel
  * 应用导航骨架. 路由: record(首页) / list / settings / password_setup / public_dir / about.
  * 播放不再有独立页, 在列表中原地完成.
  */
+
+// Material 强调缓动 — 比 FastOutSlowInEasing 更自然: 进入快起慢停(内容稳稳落位),
+// 离开慢起快走(让位不拖沓). 进出时长匹配 300ms, 旧页不再提前消失, 消除"滑过空白"的僵硬感.
+private val NavEmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+private val NavEmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+
 @Composable
 fun EchoNavHost(
     navController: NavHostController,
@@ -48,35 +54,36 @@ fun EchoNavHost(
     NavHost(
         navController = navController,
         startDestination = EchoRoutes.RECORD,
-        // ── 页面切换动效 (iOS 风格 push/pop, 克制不抢戏) ──
-        // 前进: 新页从右 1/4 屏滑入 + 淡入 + 微缩放; 旧页向左淡出
+        // ── 页面切换动效 (iOS 风格 push/pop, 强调自然连贯) ──
+        // 前进: 新页从右滑入 + 淡入 + 微放大(0.96→1, 由远及近的视差); 旧页向左滑出 + 淡出 + 微放大(→1.04, 退到后方)
         enterTransition = {
             slideIntoContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(320, easing = FastOutSlowInEasing),
-            ) + fadeIn(tween(320, easing = FastOutSlowInEasing)) +
-                scaleIn(initialScale = 0.985f, animationSpec = tween(320, easing = FastOutSlowInEasing))
+                animationSpec = tween(300, easing = NavEmphasizedDecelerate),
+            ) + fadeIn(tween(300, easing = NavEmphasizedDecelerate)) +
+                scaleIn(initialScale = 0.96f, animationSpec = tween(300, easing = NavEmphasizedDecelerate))
         },
         exitTransition = {
             slideOutOfContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(260, easing = FastOutSlowInEasing),
-            ) + fadeOut(tween(200))
+                animationSpec = tween(300, easing = NavEmphasizedAccelerate),
+            ) + fadeOut(tween(300, easing = NavEmphasizedAccelerate)) +
+                scaleOut(targetScale = 1.04f, animationSpec = tween(300, easing = NavEmphasizedAccelerate))
         },
         // 返回: 当前页向右滑出, 上一页从左侧滑回
         popEnterTransition = {
             slideIntoContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(320, easing = FastOutSlowInEasing),
-            ) + fadeIn(tween(320, easing = FastOutSlowInEasing)) +
-                scaleIn(initialScale = 0.985f, animationSpec = tween(320, easing = FastOutSlowInEasing))
+                animationSpec = tween(300, easing = NavEmphasizedDecelerate),
+            ) + fadeIn(tween(300, easing = NavEmphasizedDecelerate)) +
+                scaleIn(initialScale = 0.96f, animationSpec = tween(300, easing = NavEmphasizedDecelerate))
         },
         popExitTransition = {
             slideOutOfContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(260, easing = FastOutSlowInEasing),
-            ) + fadeOut(tween(200)) +
-                scaleOut(targetScale = 0.985f, animationSpec = tween(260, easing = FastOutSlowInEasing))
+                animationSpec = tween(300, easing = NavEmphasizedAccelerate),
+            ) + fadeOut(tween(300, easing = NavEmphasizedAccelerate)) +
+                scaleOut(targetScale = 1.04f, animationSpec = tween(300, easing = NavEmphasizedAccelerate))
         },
     ) {
         composable(EchoRoutes.RECORD) {

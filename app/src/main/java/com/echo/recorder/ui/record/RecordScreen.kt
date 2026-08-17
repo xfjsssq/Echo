@@ -228,16 +228,29 @@ fun RecordScreen(
         )
     }
 
+    // 暗黑主题判定 (提前计算: 用于背景渐变 / logo / 按钮配色)
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
     // ── 根布局: 全屏渐变背景 (通顶通底) ──
+    // 暗黑: 极淡暖琥珀光自顶部缓慢溶解进背景, 全程无硬边 (消除"色块分界线");
+    //       用 primary(暖琥珀) 而非 primaryContainer(浊金), 避免暗色下泛橄榄灰.
+    // 明亮: 暖黄容器色自上而下柔和过渡 (三段递减 alpha, 不再留平直 surface 段造成台阶).
+    val glowColor = if (isDark) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.primaryContainer
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.20f),
+                    if (isDark) listOf(
+                        glowColor.copy(alpha = 0.14f),
+                        glowColor.copy(alpha = 0.07f),
+                        glowColor.copy(alpha = 0.025f),
                         MaterialTheme.colorScheme.surface,
+                    ) else listOf(
+                        glowColor.copy(alpha = 0.42f),
+                        glowColor.copy(alpha = 0.18f),
+                        glowColor.copy(alpha = 0.05f),
                         MaterialTheme.colorScheme.surface,
                     ),
                 ),
@@ -291,9 +304,6 @@ fun RecordScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                // 暗黑主题检测 (用于 logo 边缘渐隐 / 按钮配色)
-                val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-
                 // 阶段切换交叉淡化 (IDLE ⇄ BUFFERING ⇄ REVIEW), 轻微缩放避免生硬
                 AnimatedContent(
                     targetState = state.phase,
@@ -395,23 +405,26 @@ private fun IdleContent(hasPermission: Boolean, darkTheme: Boolean, onStart: () 
                 .scale(pressScale),
             contentAlignment = Alignment.Center,
         ) {
-            // 光晕: 暗黑主题用更柔和的白色光晕做过渡, 明亮主题保持主色
-            val haloColor = if (darkTheme) Color.White else MaterialTheme.colorScheme.primary
+            // 光晕: 暗黑主题用暖琥珀光晕包裹 logo (桥接亮 logo 与暗背景, 避免白块突兀);
+            //       明亮主题保持主色光晕
+            val haloColor = MaterialTheme.colorScheme.primary
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                haloColor.copy(alpha = if (darkTheme) 0.10f else 0.20f),
-                                haloColor.copy(alpha = if (darkTheme) 0.03f else 0.06f),
+                                haloColor.copy(alpha = if (darkTheme) 0.16f else 0.20f),
+                                haloColor.copy(alpha = if (darkTheme) 0.06f else 0.06f),
                                 Color.Transparent,
                             ),
                         ),
                         CircleShape,
                     ),
             )
-            // Logo: 明亮主题用阴影做过渡; 暗黑主题边缘径向渐隐, 避免白色方块突兀
+            // Logo: 明亮主题用阴影做过渡; 暗黑主题边缘径向渐隐 + 暖色叠加,
+            //       让原本为亮色设计的白猫融入暖琥珀基调, 不再是"贴上去的白块"
+            val warmTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
             val logoModifier = if (darkTheme) {
                 Modifier
                     .size(160.dp)
@@ -419,6 +432,10 @@ private fun IdleContent(hasPermission: Boolean, darkTheme: Boolean, onStart: () 
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                     .drawWithContent {
                         drawContent()
+                        // 暖色叠加: 把白色猫身染成暖琥珀, 与橙斑/主题统一 (默认 SrcOver,
+                        // warmTint 带 0.22 alpha, 对猫身像素做半透明暖色染色; 后续 DstIn 羽化只保留圆形区域)
+                        drawRect(warmTint)
+                        // 边缘径向羽化: 融化进背景, 无硬边
                         drawRect(
                             Brush.radialGradient(
                                 listOf(Color.Black, Color.Black, Color.Transparent),
@@ -503,7 +520,7 @@ private fun BufferingContent(
                             alpha = waveReveal
                         },
                 ) {
-                    FluidWaveform(
+                    SpectrumBars(
                         amplitude = amplitude,
                         waveColor = MaterialTheme.colorScheme.primary,
                         // 与背景混合柔化, 消除纯色块的割裂感

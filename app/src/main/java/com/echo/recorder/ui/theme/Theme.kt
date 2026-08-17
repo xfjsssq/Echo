@@ -30,18 +30,27 @@ private val SkyPrimary = Color(0xFF4D8CFF)
 private val Sky80 = Color(0xFF9DBDFF)
 private val Sky90 = Color(0xFFD6E2FF)
 
-// 中性色组 (明亮)
+// 中性色组 (明亮) — 细分 surface 容器层级, 让卡片/底栏与背景之间是柔和的明度阶梯而非硬边界
 private val Neutral10 = Color(0xFF201B12)
 private val Neutral99 = Color(0xFFFFF8F1)
 private val SurfaceLight = Color(0xFFFFF8F1)
+private val SurfaceContainerLowestLight = Color(0xFFFFFFFF)
+private val SurfaceContainerLowLight = Color(0xFFFEFAF3)
 private val SurfaceContainerLight = Color(0xFFFFF1DF)
+private val SurfaceContainerHighLight = Color(0xFFFDE8CE)
+private val SurfaceContainerHighestLight = Color(0xFFFBE0BC)
 private val OnSurfaceLight = Color(0xFF201B12)
 private val OutLineLight = Color(0xFF7D7570)
 
-// 中性色组 (深色)
+// 中性色组 (深色) — 细分 surface 容器层级: 与背景同色相暖棕, 极小明度阶梯 (每级约 +3~5),
+// 卡片微微上浮而不出现"贴上去的色块"; 避免冷灰与暖背景撞色
 private val Neutral90 = Color(0xFFEFE0CF)
-private val SurfaceDark = Color(0xFF17130B)
-private val SurfaceContainerDark = Color(0xFF231C12)
+private val SurfaceDark = Color(0xFF16120A)
+private val SurfaceContainerLowestDark = Color(0xFF100C05)
+private val SurfaceContainerLowDark = Color(0xFF1A150D)
+private val SurfaceContainerDark = Color(0xFF1F1910)
+private val SurfaceContainerHighDark = Color(0xFF241D13)
+private val SurfaceContainerHighestDark = Color(0xFF2A2216)
 private val OnSurfaceDark = Color(0xFFEFE0CF)
 
 private val ErrorColor = Color(0xFFB3261E)
@@ -68,6 +77,11 @@ private val LightColors = lightColorScheme(
     surfaceVariant = SurfaceContainerLight,
     onSurfaceVariant = Color(0xFF4C4548),
     surfaceTint = MandarinPrimary,
+    surfaceContainerLowest = SurfaceContainerLowestLight,
+    surfaceContainerLow = SurfaceContainerLowLight,
+    surfaceContainer = SurfaceContainerLight,
+    surfaceContainerHigh = SurfaceContainerHighLight,
+    surfaceContainerHighest = SurfaceContainerHighestLight,
     inverseSurface = Neutral10,
     inverseOnSurface = Neutral99,
     error = ErrorColor,
@@ -88,7 +102,9 @@ private val DarkColors = darkColorScheme(
     inversePrimary = Mandarin40,
     secondary = Sky80,
     onSecondary = Color(0xFF003564),
-    secondaryContainer = Color(0xFF004D96),
+    // 柔化冷蓝容器: 原值 0xFF004D96 过饱和, 与暖棕背景冷热对撞突兀;
+    // 改为低饱和、略带暖灰倾向的深蓝, 既保留"声波蓝"语义又不割裂
+    secondaryContainer = Color(0xFF23436A),
     onSecondaryContainer = Sky90,
     tertiary = Color(0xFFFFB68D),
     onTertiary = Color(0xFF552E1D),
@@ -101,6 +117,11 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = SurfaceContainerDark,
     onSurfaceVariant = Color(0xFFD3C5B6),
     surfaceTint = Mandarin80,
+    surfaceContainerLowest = SurfaceContainerLowestDark,
+    surfaceContainerLow = SurfaceContainerLowDark,
+    surfaceContainer = SurfaceContainerDark,
+    surfaceContainerHigh = SurfaceContainerHighDark,
+    surfaceContainerHighest = SurfaceContainerHighestDark,
     inverseSurface = Neutral90,
     inverseOnSurface = Neutral10,
     error = Color(0xFFFFB4AB),
