@@ -33,8 +33,9 @@ android {
         }
         release {
             isMinifyEnabled = false
-            // 启用正式签名: 取消下行注释并在 gradle.properties 提供 ECHO_* 属性.
-            // signingConfig = signingConfigs.getByName("release")
+            // 正式签名: keystore 与密码在 ~/.gradle/gradle.properties (ECHO_* 属性, 仓库外, 永不提交).
+            // 密钥文件: D:\AndroidSdk\keystores\echo-release.jks (alias: echo, 有效期 10000 天).
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
