@@ -1,7 +1,13 @@
 package com.echo.recorder.ui.onboarding
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,6 +65,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.echo.recorder.R
+import com.echo.recorder.ui.common.EntranceAnimation
+import com.echo.recorder.ui.common.echoPressScale
+import com.echo.recorder.ui.common.rememberEchoHaptics
+import com.echo.recorder.ui.theme.EchoMotion
 import com.echo.recorder.ui.theme.ThemeMode
 
 /** 引导卡片类型. */
@@ -104,6 +115,7 @@ fun OnboardingScreen(
     onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     var index by remember { mutableIntStateOf(0) }
+    val haptics = rememberEchoHaptics()
 
     Dialog(
         onDismissRequest = { /* 引导卡片通过右上角 × 或完成按钮关闭 */ },
@@ -119,6 +131,8 @@ fun OnboardingScreen(
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
+            // 卡片入场: 淡入+上浮落位 (Dialog 无法用 AnimatedContent 过渡出现)
+            EntranceAnimation(rise = 20.dp) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -136,7 +150,9 @@ fun OnboardingScreen(
                 ) {
                     IconButton(
                         onClick = onFinish,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .echoPressScale(0.9f),
                     ) {
                         Icon(
                             Icons.Filled.Close,
@@ -152,24 +168,34 @@ fun OnboardingScreen(
                     transitionSpec = {
                         if (targetState > initialState) {
                             // 前进: 新卡从右侧滑入
-                            (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
-                                slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { it / 5 }) togetherWith
-                                (fadeOut(tween(200)) +
-                                    slideOutHorizontally(animationSpec = tween(200)) { -it / 5 })
+                            (fadeIn(tween(300, easing = EchoMotion.EmphasizedDecelerate)) +
+                                slideInHorizontally(animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate)) { it / 5 }) togetherWith
+                                (fadeOut(tween(200, easing = EchoMotion.EmphasizedAccelerate)) +
+                                    slideOutHorizontally(animationSpec = tween(200, easing = EchoMotion.EmphasizedAccelerate)) { -it / 5 })
                         } else {
                             // 后退: 新卡从左侧滑入
-                            (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
-                                slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -it / 5 }) togetherWith
-                                (fadeOut(tween(200)) +
-                                    slideOutHorizontally(animationSpec = tween(200)) { it / 5 })
+                            (fadeIn(tween(300, easing = EchoMotion.EmphasizedDecelerate)) +
+                                slideInHorizontally(animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate)) { -it / 5 }) togetherWith
+                                (fadeOut(tween(200, easing = EchoMotion.EmphasizedAccelerate)) +
+                                    slideOutHorizontally(animationSpec = tween(200, easing = EchoMotion.EmphasizedAccelerate)) { it / 5 })
                         }
                     },
                     label = "onboarding_card",
                 ) { i ->
                     val card = CARDS[i]
 
-                    // 每个卡片的图标徽章 (渐变背景 + 大图标), 呼应猫咪图标风格.
+                    // 每个卡片的图标徽章 (渐变背景 + 大图标 + 缓慢呼吸), 呼应猫咪图标风格.
                     val icon: ImageVector = cardIcon(card.type)
+                    val badgeBreath = rememberInfiniteTransition(label = "badge_breath")
+                    val badgeScale by badgeBreath.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 1.03f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2400, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse,
+                        ),
+                        label = "badge_scale",
+                    )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -188,7 +214,9 @@ fun OnboardingScreen(
                         Surface(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                            modifier = Modifier.size(104.dp),
+                            modifier = Modifier
+                                .size(104.dp)
+                                .scale(badgeScale),
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -201,21 +229,29 @@ fun OnboardingScreen(
                         }
                     }
 
-                    // 页面指示圆点.
+                    // 页面指示圆点: 尺寸/颜色弹簧过渡 (不再瞬跳).
                     Spacer(Modifier.height(16.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         repeat(CARDS.size) { dot ->
+                            val active = dot == i
+                            val dotSize by animateDpAsState(
+                                targetValue = if (active) 8.dp else 6.dp,
+                                animationSpec = EchoMotion.fastSpatial(),
+                                label = "dot_size",
+                            )
+                            val dotColor by animateColorAsState(
+                                targetValue = if (active) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant,
+                                animationSpec = EchoMotion.fastEffects(),
+                                label = "dot_color",
+                            )
                             Box(
                                 modifier = Modifier
-                                    .size(if (dot == i) 8.dp else 6.dp)
-                                    .background(
-                                        if (dot == i) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.outlineVariant,
-                                        CircleShape,
-                                    ),
+                                    .size(dotSize)
+                                    .background(dotColor, CircleShape),
                             )
                         }
                     }
@@ -235,7 +271,7 @@ fun OnboardingScreen(
                     }
                 }
 
-                // 底部导航: 上一步 / 下一步 / 完成.
+                // 底部导航: 上一步 / 下一步 / 完成 (带触感反馈).
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -243,22 +279,41 @@ fun OnboardingScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (index > 0) {
-                        TextButton(onClick = { index-- }) {
+                        TextButton(
+                            onClick = {
+                                haptics.tick()
+                                index--
+                            },
+                            modifier = Modifier.echoPressScale(0.96f),
+                        ) {
                             Text(stringResource(R.string.previous))
                         }
                     }
                     Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                         if (index < CARDS.lastIndex) {
-                            Button(onClick = { index++ }) {
+                            Button(
+                                onClick = {
+                                    haptics.tick()
+                                    index++
+                                },
+                                modifier = Modifier.echoPressScale(0.96f),
+                            ) {
                                 Text(stringResource(R.string.onboarding_next))
                             }
                         } else {
-                            Button(onClick = onFinish) {
+                            Button(
+                                onClick = {
+                                    haptics.confirm()
+                                    onFinish()
+                                },
+                                modifier = Modifier.echoPressScale(0.96f),
+                            ) {
                                 Text(stringResource(R.string.onboarding_finish))
                             }
                         }
                     }
                 }
+            }
             }
         }
     }

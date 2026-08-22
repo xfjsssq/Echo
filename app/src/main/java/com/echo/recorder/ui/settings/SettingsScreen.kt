@@ -50,6 +50,9 @@ import com.echo.recorder.R
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.settings.BufferDuration
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.ui.common.animatedListEntrance
+import com.echo.recorder.ui.common.echoPressScale
+import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.lock.PasswordPromptDialog
 import com.echo.recorder.ui.lock.ChangePasswordDialog
@@ -77,6 +80,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val repo = remember { SettingsRepository(context) }
     val scope = rememberCoroutineScope()
+    val haptics = rememberEchoHaptics()
 
     var selected by remember { mutableStateOf(BufferDuration.M3) }
     var passwordOn by remember { mutableStateOf(false) }
@@ -306,7 +310,7 @@ fun SettingsScreen(
         ) {
             // ---- 录音设置 ----
             GroupTitle(stringResource(R.string.group_recording))
-            SettingsCard {
+            SettingsCard(index = 0) {
                 BufferDuration.values().forEach { dur ->
                     Row(
                         modifier = Modifier
@@ -314,11 +318,13 @@ fun SettingsScreen(
                             .selectable(
                                 selected = displaySelected == dur,
                                 onClick = {
+                                    haptics.tick()
                                     pendingSelected = dur
                                     pendingSeconds = dur.seconds
                                     showRestart = true
                                 },
                             )
+                            .echoPressScale(0.99f)
                             .padding(horizontal = 4.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -341,7 +347,7 @@ fun SettingsScreen(
 
             // ---- 安全设置 ----
             GroupTitle(stringResource(R.string.group_security))
-            SettingsCard {
+            SettingsCard(index = 1) {
                 SwitchPreference(
                     title = stringResource(R.string.password_protection),
                     subtitle = stringResource(R.string.settings_password_subtitle),
@@ -373,7 +379,7 @@ fun SettingsScreen(
 
             // ---- 存储设置 ----
             GroupTitle(stringResource(R.string.group_storage))
-            SettingsCard {
+            SettingsCard(index = 2) {
                 // 公共目录备份永远默认开启, 不再提供开关, 仅保留"公共目录文件"入口.
                 Preference(
                     title = stringResource(R.string.public_dir_files),
@@ -383,7 +389,7 @@ fun SettingsScreen(
 
             // ---- 外观与语言 ----
             GroupTitle(stringResource(R.string.group_appearance))
-            SettingsCard {
+            SettingsCard(index = 3) {
                 Preference(
                     title = stringResource(R.string.theme),
                     subtitle = stringResource(
@@ -402,7 +408,7 @@ fun SettingsScreen(
 
             // ---- 帮助与关于 ----
             GroupTitle(stringResource(R.string.group_help))
-            SettingsCard {
+            SettingsCard(index = 4) {
                 Preference(title = stringResource(R.string.how_to_use)) { onOpenOnboarding() }
                 Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
                 Preference(title = stringResource(R.string.privacy_policy)) { showPrivacyPolicy = true }
@@ -426,13 +432,17 @@ private fun GroupTitle(text: String) {
     )
 }
 
-/** 圆角卡片容器, 承载一组设置项. */
+/** 圆角卡片容器, 承载一组设置项 (按组序错峰入场). */
 @Composable
-private fun SettingsCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+private fun SettingsCard(
+    index: Int = 0,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .animatedListEntrance(index = index, withBlur = false),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
@@ -455,6 +465,7 @@ private fun Preference(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .echoPressScale(0.99f)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -494,6 +505,7 @@ private fun SwitchPreference(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .echoPressScale(0.99f)
             .clickable { onToggle(!checked) }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

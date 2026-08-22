@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.echo.recorder.R
+import com.echo.recorder.ui.common.EntranceAnimation
+import com.echo.recorder.ui.common.echoPressScale
 
 /** 首次启动隐私协议页 (居中卡片样式, 右上角 × 跳过). */
 @Composable
@@ -48,15 +50,16 @@ fun PrivacyAgreementScreen(onAgree: () -> Unit) {
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(20.dp),
-                    )
-                    .padding(24.dp),
-            ) {
+            EntranceAnimation(rise = 20.dp) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            RoundedCornerShape(20.dp),
+                        )
+                        .padding(24.dp),
+                ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -96,8 +99,10 @@ fun PrivacyAgreementScreen(onAgree: () -> Unit) {
                     onClick = onAgree,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 24.dp),
+                        .padding(top = 24.dp)
+                        .echoPressScale(0.97f),
                 ) { Text(stringResource(R.string.agree)) }
+                }
             }
         }
     }

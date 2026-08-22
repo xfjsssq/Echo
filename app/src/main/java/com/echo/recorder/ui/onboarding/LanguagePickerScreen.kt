@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.echo.recorder.R
+import com.echo.recorder.ui.common.EntranceAnimation
+import com.echo.recorder.ui.common.echoPressScale
 
 /**
  * 语言选择页 (居中卡片样式, 半透明遮罩).
@@ -44,34 +46,36 @@ fun LanguagePickerScreen(
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(20.dp),
-                    )
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    stringResource(R.string.language_selection_title),
-                    style = MaterialTheme.typography.titleLarge,
-                )
+            EntranceAnimation(rise = 20.dp) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            RoundedCornerShape(20.dp),
+                        )
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    OutlinedButton(
-                        onClick = { onPick("zh") },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.language_zh)) }
-                    OutlinedButton(
-                        onClick = { onPick("en") },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.language_en)) }
+                    Text(
+                        stringResource(R.string.language_selection_title),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { onPick("zh") },
+                            modifier = Modifier.fillMaxWidth().echoPressScale(0.97f),
+                        ) { Text(stringResource(R.string.language_zh)) }
+                        OutlinedButton(
+                            onClick = { onPick("en") },
+                            modifier = Modifier.fillMaxWidth().echoPressScale(0.97f),
+                        ) { Text(stringResource(R.string.language_en)) }
+                    }
                 }
             }
         }

@@ -1,5 +1,11 @@
 package com.echo.recorder.ui.list
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +47,12 @@ import com.echo.recorder.R
 import com.echo.recorder.common.PublicDirManager
 import com.echo.recorder.settings.PasswordCrypto
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.ui.common.LoadingPulse
+import com.echo.recorder.ui.common.echoPressScale
+import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.common.rememberPublicDirGrant
+import com.echo.recorder.ui.common.rememberShakeState
+import com.echo.recorder.ui.common.shake
 import com.echo.recorder.ui.fmtTime
 import com.echo.recorder.ui.lock.PasswordInputField
 import kotlinx.coroutines.flow.first
@@ -88,15 +99,25 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
     // 验证步骤: 0=确认删除 1=输密码 2=输恢复密钥
     var verifyStep by remember { mutableStateOf(0) }
     var input by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    // 错误文案资源 id (修复此前直接显示裸 key "password_wrong" 的 i18n 缺陷)
+    var errorRes by remember { mutableStateOf<Int?>(null) }
+    val shake = rememberShakeState()
+    val haptics = rememberEchoHaptics()
+    LaunchedEffect(errorRes) {
+        if (errorRes != null) {
+            haptics.reject()
+            shake.shake()
+        }
+    }
 
     fun deleteNow(target: PublicDirManager.PublicFileInfo) {
+        haptics.confirm()
         scope.launch {
             PublicDirManager.deletePublic(context, target.fileName)
             pendingDelete = null
             verifyStep = 0
             input = ""
-            error = null
+            errorRes = null
             load()
         }
     }
@@ -106,6 +127,8 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
         when (verifyStep) {
             0 -> AlertDialog(
                 onDismissRequest = { pendingDelete = null },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 title = { Text(stringResource(R.string.delete)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -120,7 +143,8 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                 confirmButton = {
                     TextButton(onClick = {
                         if (passwordEnabled) {
-                            verifyStep = 1; input = ""; error = null
+                            haptics.tick()
+                            verifyStep = 1; input = ""; errorRes = null
                         } else {
                             deleteNow(target)
                         }
@@ -132,25 +156,31 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
             )
             1 -> AlertDialog(
                 onDismissRequest = { pendingDelete = null; verifyStep = 0 },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 title = { Text(stringResource(R.string.double_verify_needed)) },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.shake(shake),
+                    ) {
                         PasswordInputField(
                             value = input,
-                            onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); error = null },
+                            onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); errorRes = null },
                             label = stringResource(R.string.input_password),
                             keyboardType = KeyboardType.Number,
                         )
-                        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        errorRes?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         val hash = storedHash
                         if (hash != null && PasswordCrypto.verify(input, hash)) {
-                            verifyStep = 2; input = ""; error = null
+                            haptics.tick()
+                            verifyStep = 2; input = ""; errorRes = null
                         } else {
-                            error = "password_wrong"
+                            errorRes = R.string.password_wrong
                         }
                     }) { Text(stringResource(R.string.confirm)) }
                 },
@@ -160,16 +190,21 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
             )
             2 -> AlertDialog(
                 onDismissRequest = { pendingDelete = null; verifyStep = 0 },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 title = { Text(stringResource(R.string.double_verify_step2)) },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.shake(shake),
+                    ) {
                         PasswordInputField(
                             value = input,
-                            onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); error = null },
+                            onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); errorRes = null },
                             label = stringResource(R.string.recovery_key_title),
                             keyboardType = KeyboardType.Number,
                         )
-                        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        errorRes?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                     }
                 },
                 confirmButton = {
@@ -178,7 +213,7 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                         if (hash != null && PasswordCrypto.verify(input, hash)) {
                             deleteNow(target)
                         } else {
-                            error = "recovery_key_wrong"
+                            errorRes = R.string.recovery_key_wrong
                         }
                     }) { Text(stringResource(R.string.confirm)) }
                 },
@@ -194,7 +229,10 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(stringResource(R.string.public_dir_management_title)) },
                 navigationIcon = {
-                    IconButton(onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "back") }
+                    IconButton(
+                        onBack,
+                        modifier = Modifier.echoPressScale(0.9f),
+                    ) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                 },
             )
         },
@@ -213,7 +251,7 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                         )
                         Button(
                             onClick = grant.request,
-                            modifier = Modifier.padding(top = 20.dp),
+                            modifier = Modifier.padding(top = 20.dp).echoPressScale(0.97f),
                         ) { Text(stringResource(R.string.public_dir_choose_folder)) }
                     }
                 }
@@ -224,34 +262,50 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(16.dp),
                 )
-                if (loading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("...")
-                    }
-                } else if (files.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.no_recordings))
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(files, key = { it.fileName }) { info ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(info.displayName, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        text = fmtTime(info.lastModified),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                // 加载 ⇄ 空态 ⇄ 列表: 交叉淡化而非瞬切
+                AnimatedContent(
+                    targetState = loading to files.isEmpty(),
+                    transitionSpec = {
+                        (fadeIn(tween(220)) + scaleIn(
+                            initialScale = 0.98f,
+                            animationSpec = tween(220),
+                        )) togetherWith fadeOut(tween(150))
+                    },
+                    label = "public_dir_body",
+                ) { (isLoading, empty) ->
+                    when {
+                        isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            LoadingPulse(dotSize = 9.dp)
+                        }
+                        empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.no_recordings))
+                        }
+                        else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(files, key = { it.fileName }) { info ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                                        .echoPressScale(0.99f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(info.displayName, style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            text = fmtTime(info.lastModified),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { pendingDelete = info; verifyStep = 0 },
+                                        modifier = Modifier.echoPressScale(0.9f),
+                                    ) {
+                                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
+                                    }
                                 }
-                                IconButton(onClick = { pendingDelete = info; verifyStep = 0 }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
-                                }
+                                Divider()
                             }
-                            Divider()
                         }
                     }
                 }

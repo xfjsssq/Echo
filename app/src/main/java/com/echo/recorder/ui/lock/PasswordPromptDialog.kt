@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +28,9 @@ import com.echo.recorder.R
 import com.echo.recorder.auth.LockoutManager
 import com.echo.recorder.auth.PasswordVerifier
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.ui.common.rememberEchoHaptics
+import com.echo.recorder.ui.common.rememberShakeState
+import com.echo.recorder.ui.common.shake
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
@@ -65,6 +69,16 @@ fun PasswordPromptDialog(
     // 锁定倒计时 (秒).
     var lockSeconds by remember { mutableIntStateOf(LockoutManager.remainingSeconds().toInt()) }
 
+    // 错误反馈: 横向抖动 + Reject 触感
+    val shake = rememberShakeState()
+    val haptics = rememberEchoHaptics()
+    LaunchedEffect(error) {
+        if (error) {
+            haptics.reject()
+            shake.shake()
+        }
+    }
+
     // 启动时检查是否已锁定.
     LaunchedEffect(Unit) {
         lockSeconds = LockoutManager.remainingSeconds().toInt()
@@ -90,9 +104,14 @@ fun PasswordPromptDialog(
         }
         AlertDialog(
             onDismissRequest = onDismiss,
+            shape = RoundedCornerShape(24.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text(stringResource(R.string.reset_password_with_recovery)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.shake(shake),
+                ) {
                     RecoveryKeyInput(
                         value = recoveryInput,
                         onValueChange = { recoveryInput = it; error = false },
@@ -135,9 +154,14 @@ fun PasswordPromptDialog(
     var input by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text(stringResource(R.string.input_password)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.shake(shake),
+            ) {
                 if (passwordType == "mixed") {
                     // 扩展密码: 输入 + 确认按钮.
                     MixedPasswordInput(
@@ -146,7 +170,7 @@ fun PasswordPromptDialog(
                         label = stringResource(R.string.mixed_input_hint),
                         onImeAction = {
                             when (PasswordVerifier.verifyPassword(input, storedHash)) {
-                                PasswordVerifier.Result.Success -> onVerify()
+                                PasswordVerifier.Result.Success -> { haptics.confirm(); onVerify() }
                                 PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
                                 PasswordVerifier.Result.Wrong -> {
                                     error = true
@@ -159,7 +183,7 @@ fun PasswordPromptDialog(
                     Spacer(Modifier.height(4.dp))
                     Button(onClick = {
                         when (PasswordVerifier.verifyPassword(input, storedHash)) {
-                            PasswordVerifier.Result.Success -> onVerify()
+                            PasswordVerifier.Result.Success -> { haptics.confirm(); onVerify() }
                             PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
                             PasswordVerifier.Result.Wrong -> {
                                 error = true
@@ -173,7 +197,7 @@ fun PasswordPromptDialog(
                     PinInput(
                         onComplete = { pin ->
                             when (PasswordVerifier.verifyPassword(pin, storedHash)) {
-                                PasswordVerifier.Result.Success -> onVerify()
+                                PasswordVerifier.Result.Success -> { haptics.confirm(); onVerify() }
                                 PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
                                 PasswordVerifier.Result.Wrong -> {
                                     error = true

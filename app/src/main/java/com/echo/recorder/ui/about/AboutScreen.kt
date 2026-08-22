@@ -3,7 +3,6 @@ package com.echo.recorder.ui.about
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +25,9 @@ import androidx.compose.ui.unit.dp
 import com.echo.recorder.BuildConfig
 import com.echo.recorder.R
 import com.echo.recorder.about.SignatureUtils
+import com.echo.recorder.ui.common.EntranceAnimation
+import com.echo.recorder.ui.common.LoadingPulse
+import com.echo.recorder.ui.common.echoPressScale
 
 /**
  * 关于页面: 显示版本号 + SHA-256 签名指纹.
@@ -43,35 +45,44 @@ fun AboutScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(stringResource(R.string.about)) },
                 navigationIcon = {
-                    IconButton(onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "back") }
+                    IconButton(
+                        onBack,
+                        modifier = Modifier.echoPressScale(0.9f),
+                    ) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                 },
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text("Echo", style = MaterialTheme.typography.headlineMedium)
-            Text(
-                text = stringResource(R.string.version) + ": " + BuildConfig.VERSION_NAME,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(stringResource(R.string.signature), style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = fingerprint ?: "—",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = stringResource(R.string.signature_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+        EntranceAnimation(rise = 14.dp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    text = stringResource(R.string.version) + ": " + BuildConfig.VERSION_NAME,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(stringResource(R.string.signature), style = MaterialTheme.typography.titleMedium)
+                if (fingerprint != null) {
+                    Text(
+                        text = fingerprint!!,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    LoadingPulse(dotSize = 6.dp)
+                }
+                Text(
+                    text = stringResource(R.string.signature_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
     }
 }

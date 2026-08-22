@@ -1,7 +1,13 @@
 package com.echo.recorder.ui.common
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -35,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.echo.recorder.ui.theme.EchoMotion
 
 /**
  * 实色药丸按钮 — 完整包住图标+文字:
@@ -164,7 +171,23 @@ fun FeatheredOrbIcon(
                 .clickableNoRipple(interaction, onClick),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(iconSize))
+            // 图标切换弹簧变形: 播放⇄暂停等状态翻转时缩放+旋转过场, 不再瞬切
+            AnimatedContent(
+                targetState = icon,
+                transitionSpec = {
+                    (scaleIn(
+                        initialScale = 0.5f,
+                        animationSpec = EchoMotion.fastSpatial(),
+                    ) + fadeIn(tween(120))) togetherWith
+                        (scaleOut(
+                            targetScale = 0.5f,
+                            animationSpec = EchoMotion.fastEffects(),
+                        ) + fadeOut(tween(80)))
+                },
+                label = "orb_icon",
+            ) { currentIcon ->
+                Icon(currentIcon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(iconSize))
+            }
         }
     }
 }

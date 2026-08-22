@@ -4,7 +4,9 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -14,8 +16,11 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,9 +29,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -79,7 +86,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -96,11 +110,20 @@ import com.echo.recorder.playback.AudioPlayer
 import com.echo.recorder.playback.DefaultAudioPlayerFactory
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.share.ShareHelper
+import com.echo.recorder.ui.common.AnimatedMode
+import com.echo.recorder.ui.common.AnimatedStep
+import com.echo.recorder.ui.common.EchoHaptics
 import com.echo.recorder.ui.common.FeatheredOrbIcon
+import com.echo.recorder.ui.common.GlassSurface
+import com.echo.recorder.ui.common.LoadingPulse
+import com.echo.recorder.ui.common.StepDirection
 import com.echo.recorder.ui.common.animatedListEntrance
+import com.echo.recorder.ui.common.echoPressScale
+import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.common.rememberPublicDirGrant
 import com.echo.recorder.ui.formatElapsed
 import com.echo.recorder.ui.lock.PasswordPromptDialog
+import com.echo.recorder.ui.theme.EchoMotion
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
@@ -158,6 +181,12 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
     }
 
     val recordingDays = remember(items) { items.map { startOfDay(it.createdAt) }.toSet() }
+    val haptics = rememberEchoHaptics()
+
+    // 进入多选模式时给一次触感 (长按已有 LongPress, 这里补批量栏出现的确认感)
+    LaunchedEffect(state.selectionMode) {
+        if (state.selectionMode) haptics.gestureStart()
+    }
 
     Scaffold(
         topBar = {
@@ -165,28 +194,72 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                 TopAppBar(
                     navigationIcon = {
                         // 日历入口放到标题左侧 (导航图标位), 与主页右上角设置按钮完全错开.
-                        IconButton(onClick = { showCalendar = true }) {
+                        IconButton(
+                            onClick = { showCalendar = true },
+                            modifier = Modifier.echoPressScale(0.9f),
+                        ) {
                             Icon(Icons.Filled.CalendarMonth, contentDescription = stringResource(R.string.calendar))
                         }
                     },
                     title = { Text(stringResource(R.string.record_list)) },
                     actions = {
                         if (state.tab == ListTab.LONG_TERM) {
-                            IconButton(onClick = { showImport = true }) {
+                            IconButton(
+                                onClick = { showImport = true },
+                                modifier = Modifier.echoPressScale(0.9f),
+                            ) {
                                 Icon(Icons.Filled.FileOpen, contentDescription = stringResource(R.string.import_from_public_dir))
                             }
                         }
                     },
                 )
-                TabRow(selectedTabIndex = state.tab.ordinal) {
+                TabRow(
+                    selectedTabIndex = state.tab.ordinal,
+                    indicator = { tabPositions ->
+                        // 弹簧渐变胶囊: 黄→蓝品牌渐变, 位置/宽度弹性跟随 (轻微过冲)
+                        if (state.tab.ordinal < tabPositions.size) {
+                            val pos = tabPositions[state.tab.ordinal]
+                            val left by animateDpAsState(
+                                pos.left + pos.width * 0.22f,
+                                EchoMotion.fastSpatial(),
+                                label = "tab_left",
+                            )
+                            val width by animateDpAsState(
+                                pos.width * 0.56f,
+                                EchoMotion.fastSpatial(),
+                                label = "tab_width",
+                            )
+                            Box(
+                                Modifier
+                                    .offset(x = left)
+                                    .size(width = width, height = 3.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                MaterialTheme.colorScheme.primary,
+                                                MaterialTheme.colorScheme.secondary,
+                                            ),
+                                        ),
+                                    ),
+                            )
+                        }
+                    },
+                ) {
                     Tab(
                         selected = state.tab == ListTab.TEMPORARY,
-                        onClick = { viewModel.switchTab(ListTab.TEMPORARY) },
+                        onClick = {
+                            haptics.tick()
+                            viewModel.switchTab(ListTab.TEMPORARY)
+                        },
                         text = { Text(stringResource(R.string.temporary_recordings)) },
                     )
                     Tab(
                         selected = state.tab == ListTab.LONG_TERM,
-                        onClick = { viewModel.switchTab(ListTab.LONG_TERM) },
+                        onClick = {
+                            haptics.tick()
+                            viewModel.switchTab(ListTab.LONG_TERM)
+                        },
                         text = { Text(stringResource(R.string.longterm_recordings)) },
                     )
                 }
@@ -214,12 +287,17 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
             }
         },
     ) { padding ->
-        if (items.isEmpty()) {
-            EmptyList(
-                recordingTab = state.tab,
-                modifier = Modifier.animatedListEntrance(index = 0, withBlur = false),
-            )
-        } else {
+        // Tab 内容过渡: 交叉淡化+微缩放, 列表的错峰入场/模糊揭示随之重放
+        AnimatedMode(
+            targetState = state.tab,
+            modifier = Modifier.fillMaxSize().padding(padding),
+        ) { _ ->
+            if (items.isEmpty()) {
+                EmptyList(
+                    recordingTab = state.tab,
+                    modifier = Modifier.animatedListEntrance(index = 0, withBlur = false),
+                )
+            } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = listState) {
                 // 临时录音提示条: 提醒 24h 自动删除
                 if (state.tab == ListTab.TEMPORARY) {
@@ -266,10 +344,17 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                             player = player,
                             isPlayingThis = playingId == rec.id,
                             onTap = {
-                                if (state.selectionMode) viewModel.toggleSelect(rec.id)
-                                else viewModel.toggleExpanded(rec.id)
+                                if (state.selectionMode) {
+                                    haptics.tick()
+                                    viewModel.toggleSelect(rec.id)
+                                } else {
+                                    viewModel.toggleExpanded(rec.id)
+                                }
                             },
-                            onLongPress = { viewModel.enterSelection(rec.id) },
+                            onLongPress = {
+                                haptics.longPress()
+                                viewModel.enterSelection(rec.id)
+                            },
                             onSave = { viewModel.moveToLongTerm(rec.id) },
                             onSaveToPublic = { viewModel.saveToPublic(rec.id) },
                             onRename = { renameTarget = rec.id },
@@ -280,6 +365,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                     }
                 }
             }
+            }
         }
     }
 
@@ -287,6 +373,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
         CalendarDialog(
             recordingDays = recordingDays,
             onDateSelected = { date ->
+                haptics.confirm()
                 showCalendar = false
                 val dayStr = dayFmt().format(Date(startOfDayFromLocal(date)))
                 scrollTarget = dayStr
@@ -308,6 +395,8 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
             var newName by remember(renameId) { mutableStateOf(rec.displayName.removeSuffix(".m4a")) }
             AlertDialog(
                 onDismissRequest = { renameTarget = null },
+                shape = RoundedCornerShape(24.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 title = { Text(stringResource(R.string.rename)) },
                 text = {
                     OutlinedTextField(
@@ -465,6 +554,8 @@ private fun ImportFromPublicDirDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text(stringResource(R.string.import_from_public_dir_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -478,7 +569,7 @@ private fun ImportFromPublicDirDialog(
                         Text(stringResource(R.string.public_dir_choose_folder))
                     }
                 } else if (loading) {
-                    Text("...", style = MaterialTheme.typography.bodyMedium)
+                    LoadingPulse()
                 } else if (importable.isEmpty()) {
                     Text(
                         stringResource(R.string.import_no_new),
@@ -490,26 +581,18 @@ private fun ImportFromPublicDirDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    val importHaptics = rememberEchoHaptics()
                     LazyColumn(modifier = Modifier.fillMaxWidth().height(300.dp)) {
                         items(importable, key = { it.fileName }) { info ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selected = if (info.fileName in selected) selected - info.fileName else selected + info.fileName
-                                    }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    Icons.Filled.CheckCircle,
-                                    contentDescription = null,
-                                    tint = if (info.fileName in selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                                Spacer(Modifier.size(12.dp))
-                                Text(info.displayName, style = MaterialTheme.typography.bodyLarge)
-                            }
+                            val picked = info.fileName in selected
+                            ImportFileRow(
+                                displayName = info.displayName,
+                                picked = picked,
+                                onClick = {
+                                    importHaptics.tick()
+                                    selected = if (picked) selected - info.fileName else selected + info.fileName
+                                },
+                            )
                         }
                     }
                 }
@@ -545,6 +628,46 @@ private fun shareRecording(context: Context, rec: Recording) {
     ShareHelper.shareAudio(context, file, "${context.packageName}.fileprovider")
 }
 
+/** 导入文件行: 按压反馈 + 选中勾弹性缩放 (与录音列表行同语言). */
+@Composable
+private fun ImportFileRow(displayName: String, picked: Boolean, onClick: () -> Unit) {
+    val checkScale = remember { Animatable(1f) }
+    LaunchedEffect(picked) {
+        if (picked) {
+            checkScale.snapTo(0.5f)
+            checkScale.animateTo(1f, EchoMotion.fastSpatial())
+        }
+    }
+    val checkTint by animateColorAsState(
+        targetValue = if (picked) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        animationSpec = EchoMotion.fastEffects(),
+        label = "import_check_tint",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .echoPressScale(0.985f)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.CheckCircle,
+            contentDescription = null,
+            tint = checkTint,
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer {
+                    scaleX = checkScale.value
+                    scaleY = checkScale.value
+                },
+        )
+        Spacer(Modifier.size(12.dp))
+        Text(displayName, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
 @Composable
 private fun CalendarDialog(
     recordingDays: Set<Long>,
@@ -552,6 +675,9 @@ private fun CalendarDialog(
     onDismiss: () -> Unit,
 ) {
     var month by remember { mutableStateOf(YearMonth.now()) }
+    // 翻月方向: 决定网格滑入方向 (前翻向前, 后翻向后)
+    var navDir by remember { mutableStateOf(StepDirection.Forward) }
+    val haptics = rememberEchoHaptics()
     val monthLabel: String = remember(month) {
         if (languageIsEn()) {
             java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.ENGLISH).format(
@@ -561,11 +687,11 @@ private fun CalendarDialog(
             "%d年%02d月".format(month.year, month.monthValue)
         }
     }
-    val leadingBlanks = month.atDay(1).dayOfWeek.value % 7 // 周日=0
-    val daysInMonth = month.lengthOfMonth()
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
@@ -574,7 +700,14 @@ private fun CalendarDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { month = month.minusMonths(1) }) {
+                IconButton(
+                    onClick = {
+                        haptics.tick()
+                        navDir = StepDirection.Backward
+                        month = month.minusMonths(1)
+                    },
+                    modifier = Modifier.echoPressScale(0.9f),
+                ) {
                     Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.previous_month))
                 }
                 Text(
@@ -583,7 +716,14 @@ private fun CalendarDialog(
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Medium,
                 )
-                IconButton(onClick = { month = month.plusMonths(1) }) {
+                IconButton(
+                    onClick = {
+                        haptics.tick()
+                        navDir = StepDirection.Forward
+                        month = month.plusMonths(1)
+                    },
+                    modifier = Modifier.echoPressScale(0.9f),
+                ) {
                     Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
                 }
             }
@@ -608,37 +748,55 @@ private fun CalendarDialog(
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                val total = leadingBlanks + daysInMonth
-                val rows = (total + 6) / 7
-                for (r in 0 until rows) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        for (c in 0 until 7) {
-                            val idx = r * 7 + c
-                            val day = idx - leadingBlanks + 1
-                            Box(
-                                modifier = Modifier.weight(1f).padding(vertical = 2.dp),
-                                contentAlignment = Alignment.Center,
+                // 翻月: 网格方向性滑动而非瞬切
+                AnimatedStep(targetState = month, direction = navDir) { m ->
+                    MonthGrid(m, recordingDays, onDateSelected)
+                }
+            }
+        },
+    )
+}
+
+/** 单月日期网格 (按传入月份计算, 供翻月过渡冻结旧月面). */
+@Composable
+private fun MonthGrid(month: YearMonth, recordingDays: Set<Long>, onDateSelected: (LocalDate) -> Unit) {
+    val leadingBlanks = month.atDay(1).dayOfWeek.value % 7 // 周日=0
+    val daysInMonth = month.lengthOfMonth()
+    val total = leadingBlanks + daysInMonth
+    val rows = (total + 6) / 7
+    Column {
+        for (r in 0 until rows) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                for (c in 0 until 7) {
+                    val idx = r * 7 + c
+                    val day = idx - leadingBlanks + 1
+                    Box(
+                        modifier = Modifier.weight(1f).padding(vertical = 2.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (day in 1..daysInMonth) {
+                            val date = month.atDay(day)
+                            val hasRec = recordingDays.contains(startOfDayFromLocal(date))
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(CircleShape)
+                                    .echoPressScale(0.9f)
+                                    .clickable { onDateSelected(date) }
+                                    .padding(vertical = 4.dp),
                             ) {
-                                if (day in 1..daysInMonth) {
-                                    val date = month.atDay(day)
-                                    val hasRec = recordingDays.contains(startOfDayFromLocal(date))
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.fillMaxWidth().clip(CircleShape).clickable { onDateSelected(date) }.padding(vertical = 4.dp),
-                                    ) {
-                                        Text("$day", style = MaterialTheme.typography.bodyMedium)
-                                        if (hasRec) {
-                                            Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                                        }
-                                    }
+                                Text("$day", style = MaterialTheme.typography.bodyMedium)
+                                if (hasRec) {
+                                    Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
                                 }
                             }
                         }
                     }
                 }
             }
-        },
-    )
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -678,12 +836,37 @@ private fun RecordingRow(
         label = "row_bg",
     )
 
+    // 选中勾: 选中瞬间从 0.5 弹到 1 (轻微过冲), 不再瞬移
+    val checkScale = remember { Animatable(1f) }
+    LaunchedEffect(selected) {
+        if (selected) {
+            checkScale.snapTo(0.5f)
+            checkScale.animateTo(1f, EchoMotion.fastSpatial())
+        }
+    }
+    val checkTint by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        animationSpec = EchoMotion.fastEffects(),
+        label = "check_tint",
+    )
+
+    // 正在播放本行: 品牌色描边呼吸提示 (状态一眼可见)
+    val playingBorder by animateColorAsState(
+        targetValue = if (isPlayingThis) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+        else MaterialTheme.colorScheme.primary.copy(alpha = 0f),
+        animationSpec = EchoMotion.slowEffects(),
+        label = "playing_border",
+    )
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp)
             .clip(shape = RoundedCornerShape(16.dp))
             .background(rowBg)
+            .echoPressScale(0.985f)
+            .border(1.dp, playingBorder, RoundedCornerShape(16.dp))
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -695,8 +878,13 @@ private fun RecordingRow(
                 Icon(
                     painterSelect ?: Icons.Filled.CheckCircle,
                     contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
+                    tint = checkTint,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .graphicsLayer {
+                            scaleX = checkScale.value
+                            scaleY = checkScale.value
+                        },
                 )
                 Spacer(Modifier.size(12.dp))
             }
@@ -814,13 +1002,14 @@ private fun MiniPlayer(
 ) {
     val ps by player.stateFlow.collectAsStateWithLifecycle()
     // 播放仅在用户点击播放按钮时触发 prepare, 展开不自动抢占播放.
+    val haptics = rememberEchoHaptics()
 
     Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         val duration = if (ps.durationMs > 0) ps.durationMs else rec.durationMs.toInt().coerceAtLeast(1)
         var seekByUser by remember { mutableStateOf(false) }
         var seekValue by remember { mutableStateOf(0f) }
 
-        Slider(
+        GlowSlider(
             value = if (isPlayingThis && !seekByUser) ps.currentPositionMs.toFloat() else seekValue,
             onValueChange = { seekByUser = true; seekValue = it },
             onValueChangeFinished = {
@@ -829,6 +1018,7 @@ private fun MiniPlayer(
             },
             valueRange = 0f..duration.toFloat(),
             modifier = Modifier.fillMaxWidth(),
+            haptics = haptics,
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -927,14 +1117,128 @@ private fun MiniPlayer(
     }
 }
 
+/**
+ * 自绘发光滑杆 — 播放进度条:
+ * - 轨道: 已播段黄→蓝品牌渐变, 未播段低调底色
+ * - 拇指: 品牌色圆点 + 径向辉光 + 顶部高光点 (宝石感), 按下弹性放大
+ * - 触感: 起手 gestureStart, 落位 tick
+ */
+@Composable
+private fun GlowSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+    haptics: EchoHaptics,
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val thumbScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (pressed) 1.4f else 1f,
+        animationSpec = EchoMotion.fastSpatial(),
+        label = "thumb_press",
+    )
+
+    val warm = MaterialTheme.colorScheme.primary
+    val cool = MaterialTheme.colorScheme.secondary
+    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val thumbColor = MaterialTheme.colorScheme.primary
+
+    fun posToValue(x: Float, width: Float): Float {
+        val frac = (x / width).coerceIn(0f, 1f)
+        return valueRange.start + frac * (valueRange.endInclusive - valueRange.start)
+    }
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(32.dp)
+            .pointerInput(valueRange) {
+                detectTapGestures(
+                    onTap = { offset ->
+                        pressed = true
+                        haptics.gestureStart()
+                        val v = posToValue(offset.x, size.width.toFloat())
+                        onValueChange(v)
+                        pressed = false
+                        haptics.tick()
+                        onValueChangeFinished()
+                    },
+                )
+            }
+            .pointerInput(valueRange) {
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        pressed = true
+                        haptics.gestureStart()
+                        onValueChange(posToValue(offset.x, size.width.toFloat()))
+                    },
+                    onDragEnd = {
+                        pressed = false
+                        haptics.tick()
+                        onValueChangeFinished()
+                    },
+                    onDragCancel = {
+                        pressed = false
+                        onValueChangeFinished()
+                    },
+                ) { change, _ ->
+                    onValueChange(posToValue(change.position.x, size.width.toFloat()))
+                    change.consume()
+                }
+            }
+            .drawBehind {
+                val cy = size.height / 2f
+                val trackH = 6.dp.toPx()
+                val trackR = CornerRadius(trackH / 2f, trackH / 2f)
+                val fraction = ((value - valueRange.start) /
+                    (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+
+                // 未播轨道
+                drawRoundRect(
+                    color = trackColor.copy(alpha = 0.22f),
+                    topLeft = Offset(0f, cy - trackH / 2f),
+                    size = Size(size.width, trackH),
+                    cornerRadius = trackR,
+                )
+                // 已播: 黄→蓝渐变
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(listOf(warm, cool)),
+                    topLeft = Offset(0f, cy - trackH / 2f),
+                    size = Size(size.width * fraction, trackH),
+                    cornerRadius = trackR,
+                )
+                // 拇指: 辉光 + 主体 + 高光点
+                val cx = size.width * fraction
+                val r = 7.dp.toPx() * thumbScale
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(thumbColor.copy(alpha = 0.35f), Color.Transparent),
+                        center = Offset(cx, cy),
+                        radius = r * 2.6f,
+                    ),
+                    radius = r * 2.6f,
+                    center = Offset(cx, cy),
+                )
+                drawCircle(color = thumbColor, radius = r, center = Offset(cx, cy))
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.45f),
+                    radius = r * 0.35f,
+                    center = Offset(cx - r * 0.25f, cy - r * 0.3f),
+                )
+            },
+    )
+}
+
 @Composable
 private fun BatchBottomBar(count: Int, onDelete: () -> Unit, onMoveToLongTerm: () -> Unit, onExit: () -> Unit) {
-    Surface(
-        tonalElevation = 3.dp,
-        color = MaterialTheme.colorScheme.surface,
+    // 玻璃浮层批量栏: 半透明+高光描边+噪点+暖色柔影, 悬浮于列表之上
+    GlassSurface(
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -943,9 +1247,15 @@ private fun BatchBottomBar(count: Int, onDelete: () -> Unit, onMoveToLongTerm: (
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
-            IconButton(onClick = onMoveToLongTerm) { Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.batch_move_to_longterm), tint = MaterialTheme.colorScheme.primary) }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.batch_delete), tint = MaterialTheme.colorScheme.error) }
-            IconButton(onClick = onExit) { Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.exit_selection)) }
+            IconButton(onClick = onMoveToLongTerm, modifier = Modifier.echoPressScale(0.9f)) {
+                Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.batch_move_to_longterm), tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.echoPressScale(0.9f)) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.batch_delete), tint = MaterialTheme.colorScheme.error)
+            }
+            IconButton(onClick = onExit, modifier = Modifier.echoPressScale(0.9f)) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.exit_selection))
+            }
         }
     }
 }

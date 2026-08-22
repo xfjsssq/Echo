@@ -39,6 +39,11 @@ import com.echo.recorder.settings.PasswordCrypto
 import com.echo.recorder.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.echo.recorder.ui.common.AnimatedStep
+import com.echo.recorder.ui.common.StepDirection
+import com.echo.recorder.ui.common.rememberEchoHaptics
+import com.echo.recorder.ui.common.rememberShakeState
+import com.echo.recorder.ui.common.shake
 
 /**
  * 密码设置流程.
@@ -80,6 +85,19 @@ fun PasswordSetupScreen(
     // 内存中暂存的密码和恢复密钥, 待用户确认恢复密钥后才写入 DataStore.
     var pendingPassword by remember { mutableStateOf<Pair<String, String>?>(null) }
 
+    // 向导方向 + 错误反馈 (抖动 + Reject 触感) + 步骤触感
+    var prevStep by remember { mutableIntStateOf(if (isChangePassword) 1 else 0) }
+    val stepDirection = if (step > prevStep) StepDirection.Forward else StepDirection.Backward
+    LaunchedEffect(step) { prevStep = step }
+    val shake = rememberShakeState()
+    val haptics = rememberEchoHaptics()
+    LaunchedEffect(error) {
+        if (error) {
+            haptics.reject()
+            shake.shake()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -94,15 +112,18 @@ fun PasswordSetupScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .padding(24.dp)
+                .shake(shake),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            when (step) {
-                0 -> TypeSelect(
-                    onPickPin = { passwordType = "pin"; step = 1; error = false; errorMsg = null },
-                    onPickMixed = { passwordType = "mixed"; step = 1; error = false; errorMsg = null },
-                )
+            // 向导步骤: 方向感知滑动过渡 (0选类型→1输入→2再输入→3恢复密钥), 不再硬切
+            AnimatedStep(targetState = step, direction = stepDirection) { s ->
+                when (s) {
+                    0 -> TypeSelect(
+                        onPickPin = { haptics.tick(); passwordType = "pin"; step = 1; error = false; errorMsg = null },
+                        onPickMixed = { haptics.tick(); passwordType = "mixed"; step = 1; error = false; errorMsg = null },
+                    )
                 1 -> FirstEnter(
                     passwordType = passwordType,
                     error = error,
@@ -162,6 +183,7 @@ fun PasswordSetupScreen(
                 3 -> RecoveryKeyShow(
                     key = recoveryKey ?: "",
                     onFinish = {
+                        haptics.confirm()
                         // 用户确认已记录恢复密钥, 现在写入 DataStore.
                         // 顺序: 先写类型/哈希/恢复密钥, 最后再启用密码,
                         // 避免中途被杀导致"已启用但无密码哈希"的锁死空白页状态.
@@ -175,6 +197,7 @@ fun PasswordSetupScreen(
                         onDone()
                     },
                 )
+                }
             }
         }
     }
