@@ -177,8 +177,11 @@ fun EchoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
+    // 主题切换交叉淡化: 捕获旧 scheme 逐色过渡, 而非瞬间全屏变色
+    val targetScheme = if (darkTheme) DarkColors else LightColors
+    val animatedScheme = animatedColorScheme(targetScheme)
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = animatedScheme,
         typography = AppTypography,
         content = content,
     )

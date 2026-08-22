@@ -2,4 +2,6 @@
 <resources>
     <!-- 应用图标自适应背景色 (与图标原图底色一致). -->
     <color name="ic_launcher_background">#FAFAFA</color>
+    <!-- 窗口背景: 亮色暖纸 (#FFF8F1 = SurfaceLight); 暗色覆盖见 values-night. -->
+    <color name="echo_window_bg">#FFF8F1</color>
 </resources>

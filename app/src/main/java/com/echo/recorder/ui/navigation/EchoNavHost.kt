@@ -1,7 +1,6 @@
 package com.echo.recorder.ui.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,6 +21,7 @@ import com.echo.recorder.ui.list.PublicDirManagementScreen
 import com.echo.recorder.ui.lock.PasswordSetupScreen
 import com.echo.recorder.ui.onboarding.OnboardingScreen
 import com.echo.recorder.ui.settings.SettingsScreen
+import com.echo.recorder.ui.theme.EchoMotion
 import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.record.RecordScreen
 import com.echo.recorder.ui.record.RecordViewModel
@@ -31,11 +31,9 @@ import com.echo.recorder.ui.record.RecordViewModel
  * 播放不再有独立页, 在列表中原地完成.
  */
 
-// Material 强调缓动 — 比 FastOutSlowInEasing 更自然: 进入快起慢停(内容稳稳落位),
-// 离开慢起快走(让位不拖沓). 进出时长匹配 300ms, 旧页不再提前消失, 消除"滑过空白"的僵硬感.
-private val NavEmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
-private val NavEmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
-
+// 动效 token 统一收敛至 EchoMotion (Material 强调缓动):
+// 进入快起慢停(内容稳稳落位), 离开慢起快走(让位不拖沓). 进出时长匹配 300ms.
+// 前进: 新页从右滑入 + 淡入 + 微放大(0.96→1, 由远及近的视差); 旧页向左滑出 + 淡出 + 微放大(→1.04, 退到后方)
 @Composable
 fun EchoNavHost(
     navController: NavHostController,
@@ -59,31 +57,31 @@ fun EchoNavHost(
         enterTransition = {
             slideIntoContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(300, easing = NavEmphasizedDecelerate),
-            ) + fadeIn(tween(300, easing = NavEmphasizedDecelerate)) +
-                scaleIn(initialScale = 0.96f, animationSpec = tween(300, easing = NavEmphasizedDecelerate))
+                animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate),
+            ) + fadeIn(tween(300, easing = EchoMotion.EmphasizedDecelerate)) +
+                scaleIn(initialScale = 0.96f, animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate))
         },
         exitTransition = {
             slideOutOfContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(300, easing = NavEmphasizedAccelerate),
-            ) + fadeOut(tween(300, easing = NavEmphasizedAccelerate)) +
-                scaleOut(targetScale = 1.04f, animationSpec = tween(300, easing = NavEmphasizedAccelerate))
+                animationSpec = tween(300, easing = EchoMotion.EmphasizedAccelerate),
+            ) + fadeOut(tween(300, easing = EchoMotion.EmphasizedAccelerate)) +
+                scaleOut(targetScale = 1.04f, animationSpec = tween(300, easing = EchoMotion.EmphasizedAccelerate))
         },
         // 返回: 当前页向右滑出, 上一页从左侧滑回
         popEnterTransition = {
             slideIntoContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(300, easing = NavEmphasizedDecelerate),
-            ) + fadeIn(tween(300, easing = NavEmphasizedDecelerate)) +
-                scaleIn(initialScale = 0.96f, animationSpec = tween(300, easing = NavEmphasizedDecelerate))
+                animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate),
+            ) + fadeIn(tween(300, easing = EchoMotion.EmphasizedDecelerate)) +
+                scaleIn(initialScale = 0.96f, animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate))
         },
         popExitTransition = {
             slideOutOfContainer(
                 towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(300, easing = NavEmphasizedAccelerate),
-            ) + fadeOut(tween(300, easing = NavEmphasizedAccelerate)) +
-                scaleOut(targetScale = 1.04f, animationSpec = tween(300, easing = NavEmphasizedAccelerate))
+                animationSpec = tween(300, easing = EchoMotion.EmphasizedAccelerate),
+            ) + fadeOut(tween(300, easing = EchoMotion.EmphasizedAccelerate)) +
+                scaleOut(targetScale = 1.04f, animationSpec = tween(300, easing = EchoMotion.EmphasizedAccelerate))
         },
     ) {
         composable(EchoRoutes.RECORD) {

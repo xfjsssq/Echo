@@ -35,6 +35,7 @@
     <string name="buffering_running">即时回放运行中</string>
     <string name="saving">正在保存...</string>
     <string name="review_title">已暂停, 请决定这段录音的去留</string>
+    <string name="recorded_duration">已录制 %1$s</string>
     <string name="empty_fragment">空片段</string>
     <string name="empty_fragment_cant_play">空片段, 无法播放</string>
     <string name="file_corrupted">文件已损坏</string>

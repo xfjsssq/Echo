@@ -66,6 +66,7 @@ fun SpectrumBars(
     }
 
     val barPaint = remember { Paint() }
+    val glowPaint = remember { Paint() }
     val reflPaint = remember { Paint() }
 
     val currentAmplitude by rememberUpdatedState(amplitude)
@@ -77,34 +78,51 @@ fun SpectrumBars(
     val coolTheme = MaterialTheme.colorScheme.secondaryContainer // 冷蓝
 
     // ── 逐帧更新: 振幅平滑 + 每根条独立目标 + 快攻慢放 ──
+    // 帧率无关化: 时间步长与平滑系数都按真实帧时长换算 (以 60fps 为调参基准),
+    // 高刷屏 (90/120Hz) 上动速与手感一致 —— 原实现 time += 0.030f 每帧固定累加,
+    // 帧率翻倍动速就翻倍.
     LaunchedEffect(Unit) {
+        var lastFrameNanos = 0L
         while (true) {
-            withFrameNanos { }
-            time += 0.030f
+            withFrameNanos { now ->
+                val dt = if (lastFrameNanos == 0L) 1f / 60f
+                else ((now - lastFrameNanos) / 1_000_000_000f).coerceIn(0.004f, 0.05f)
+                lastFrameNanos = now
 
-            val target = currentAmplitude.coerceIn(0f, 1f)
-            val perceived = target.pow(0.6f) // 小音量放大, 大音量柔和
-            val sa = smoothAmp.floatValue
-            smoothAmp.floatValue = if (perceived > sa) {
-                sa + (perceived - sa) * 0.75f   // 快攻
-            } else {
-                sa + (perceived - sa) * 0.45f   // 快放
-            }
-            val env = smoothAmp.floatValue
+                // 0.030f/帧(30ms 假设)在 60fps 实测 ≈ 1.8/s, 保持该基准速率
+                time += dt * 1.8f
 
-            for (i in 0 until N) {
-                // 每根条独立调制: 慢速值噪声, 让相邻条不同步
-                val mod = 0.55f + 0.45f * valueNoise(i.toFloat() * 0.7f, time * 0.5f)
-                val audio = env.pow(0.7f) * bell[i] * mod
-                // 静音呼吸: 无声时也有轻微起伏, 避免死板
-                val idle = 0.07f * bell[i] * (0.4f + 0.6f * valueNoise(i.toFloat() * 0.7f + 50f, time * 0.8f))
-                val tgt = (audio + idle).coerceIn(0.02f, 1f)
+                // 指数平滑按帧时长归一: 60fps 下与原系数完全一致
+                fun alpha(f: Float) = 1f - (1f - f).pow(60f * dt)
+                val envAtk = alpha(0.75f)
+                val envRel = alpha(0.45f)
+                val barAtk = alpha(0.55f)
+                val barRel = alpha(0.18f)
 
-                val cur = heights[i]
-                heights[i] = if (tgt > cur) {
-                    cur + (tgt - cur) * 0.55f   // attack: 瞬间冲高
+                val target = currentAmplitude.coerceIn(0f, 1f)
+                val perceived = target.pow(0.6f) // 小音量放大, 大音量柔和
+                val sa = smoothAmp.floatValue
+                smoothAmp.floatValue = if (perceived > sa) {
+                    sa + (perceived - sa) * envAtk   // 快攻
                 } else {
-                    cur + (tgt - cur) * 0.18f   // decay: 缓慢回落
+                    sa + (perceived - sa) * envRel   // 快放
+                }
+                val env = smoothAmp.floatValue
+
+                for (i in 0 until N) {
+                    // 每根条独立调制: 慢速值噪声, 让相邻条不同步
+                    val mod = 0.55f + 0.45f * valueNoise(i.toFloat() * 0.7f, time * 0.5f)
+                    val audio = env.pow(0.7f) * bell[i] * mod
+                    // 静音呼吸: 无声时也有轻微起伏, 避免死板
+                    val idle = 0.07f * bell[i] * (0.4f + 0.6f * valueNoise(i.toFloat() * 0.7f + 50f, time * 0.8f))
+                    val tgt = (audio + idle).coerceIn(0.02f, 1f)
+
+                    val cur = heights[i]
+                    heights[i] = if (tgt > cur) {
+                        cur + (tgt - cur) * barAtk   // attack: 瞬间冲高
+                    } else {
+                        cur + (tgt - cur) * barRel   // decay: 缓慢回落
+                    }
                 }
             }
         }
@@ -157,6 +175,31 @@ fun SpectrumBars(
             drawContext.canvas.drawRoundRect(
                 x, baselineY, x + barWidth, baselineY + reflH,
                 radius, radius, reflPaint,
+            )
+        }
+
+        // ── 能量辉光: 声音越大光越盛 (在最底层的倒影之上、主条之下) ──
+        val env = smoothAmp.floatValue // draw 内读取 → 每帧失效重绘
+        glowPaint.shader = android.graphics.LinearGradient(
+            0f, gradTop, 0f, baselineY,
+            intArrayOf(
+                cool.copy(alpha = 0.28f * r).toArgb(),
+                warm.copy(alpha = 0.34f * r).toArgb(),
+            ),
+            floatArrayOf(0f, 1f),
+            android.graphics.Shader.TileMode.CLAMP,
+        )
+        glowPaint.style = PaintingStyle.Fill
+        glowPaint.alpha = (0.22f + 0.30f * env).coerceIn(0f, 1f)
+        glowPaint.asFrameworkPaint().maskFilter =
+            android.graphics.BlurMaskFilter(w * 0.022f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+
+        for (i in 0 until N) {
+            val hh = maxBarH * heights[i].coerceIn(0f, 1f) * r
+            val x = i * slot + gap * 0.5f
+            drawContext.canvas.drawRoundRect(
+                x, baselineY - hh, x + barWidth, baselineY,
+                radius, radius, glowPaint,
             )
         }
 

@@ -35,6 +35,7 @@
     <string name="buffering_running">Instant replay running</string>
     <string name="saving">Saving...</string>
     <string name="review_title">Paused — decide what to do with this clip</string>
+    <string name="recorded_duration">Recorded %1$s</string>
     <string name="empty_fragment">Empty clip</string>
     <string name="empty_fragment_cant_play">Empty clip, cannot play</string>
     <string name="file_corrupted">File corrupted</string>

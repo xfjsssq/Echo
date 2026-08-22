@@ -21,12 +21,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.ui.common.EntranceAnimation
 import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.lock.LockScreen
 import com.echo.recorder.ui.lock.PasswordPromptDialog
@@ -264,15 +266,18 @@ fun EchoApp(
         SessionAuth.lock()
     }
 
-    EchoNavHost(
-        navController = navController,
-        recordViewModel = viewModel,
-        onRequestPermission = onRequestPermission,
-        onRestartService = onRestartService,
-        onRequestExit = onRequestExit,
-        onLock = onLock,
-        passwordEnabled = passwordEnabled,
-        themeMode = themeMode,
-        onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
-    )
+    // 应用外壳入场: 引导结束/冷启动进入主界面时整体淡入落位 (400ms, 一次性)
+    EntranceAnimation(rise = 0.dp, scaleFrom = 0.985f) {
+        EchoNavHost(
+            navController = navController,
+            recordViewModel = viewModel,
+            onRequestPermission = onRequestPermission,
+            onRestartService = onRestartService,
+            onRequestExit = onRequestExit,
+            onLock = onLock,
+            passwordEnabled = passwordEnabled,
+            themeMode = themeMode,
+            onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
+        )
+    }
 }

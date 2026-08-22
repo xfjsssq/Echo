@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -55,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -63,9 +65,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -89,9 +93,15 @@ import com.echo.recorder.R
 import com.echo.recorder.service.AudioAmplitudeMonitor
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.ui.common.FeatheredOrbIcon
 import com.echo.recorder.ui.common.FeatheredPillButton
+import com.echo.recorder.ui.common.LoadingPulse
+import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.fmtTime
+import com.echo.recorder.ui.formatElapsed
 import com.echo.recorder.ui.lock.PasswordPromptDialog
+import com.echo.recorder.ui.theme.EchoMotion
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlin.math.PI
 import kotlin.math.exp
@@ -143,6 +153,22 @@ fun RecordScreen(
     }
 
     var verifyDelete by remember { mutableStateOf(false) }
+    val haptics = rememberEchoHaptics()
+
+    // ── 录音时长 (跨暂停/保存续录累计; 回到 IDLE 清零) ──
+    var recordingElapsedMs by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(state.phase) {
+        if (state.phase == RecordingService.Phase.BUFFERING) {
+            val startAt = System.currentTimeMillis() - recordingElapsedMs
+            while (true) {
+                recordingElapsedMs = System.currentTimeMillis() - startAt
+                delay(250)
+            }
+        } else if (state.phase == RecordingService.Phase.IDLE) {
+            recordingElapsedMs = 0L
+        }
+    }
 
     // ── 动画状态 ──
     var animPhase by remember { mutableStateOf(AnimPhase.IDLE) }
@@ -237,6 +263,16 @@ fun RecordScreen(
     // 明亮: 暖黄容器色自上而下柔和过渡 (三段递减 alpha, 不再留平直 surface 段造成台阶).
     val glowColor = if (isDark) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.primaryContainer
+
+    // ── 缓慢流光: 一束极淡暖光在页面上部往返游移 (相位经 sin 映射, 循环接缝无跳变) ──
+    val lightDrift = rememberInfiniteTransition(label = "light_drift")
+    val lightPhase by lightDrift.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(16000, easing = LinearEasing)),
+        label = "light_phase",
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -254,7 +290,19 @@ fun RecordScreen(
                         MaterialTheme.colorScheme.surface,
                     ),
                 ),
-            ),
+            )
+            .drawBehind {
+                val cx = size.width * (0.5f + 0.42f * sin(lightPhase * 2f * PI.toFloat()))
+                val radius = size.width * 0.70f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(glowColor.copy(alpha = 0.05f), Color.Transparent),
+                        center = Offset(cx, size.height * 0.20f),
+                        radius = radius,
+                    ),
+                    radius = radius,
+                )
+            },
     ) {
         Scaffold(
             containerColor = Color.Transparent,
@@ -268,29 +316,39 @@ fun RecordScreen(
                         )
                     },
                     actions = {
+                        // 幽灵球钮: 三色低饱和光球, 与录音页"发光物体"语言一致
                         if (passwordEnabled) {
-                            IconButton(onClick = onLock) {
-                                Icon(
-                                    Icons.Filled.Lock,
-                                    contentDescription = stringResource(R.string.lock),
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                )
-                            }
-                        }
-                        IconButton(onClick = onOpenList) {
-                            Icon(
-                                Icons.Filled.List,
-                                contentDescription = stringResource(R.string.record_list),
-                                tint = MaterialTheme.colorScheme.onSurface,
+                            FeatheredOrbIcon(
+                                icon = Icons.Filled.Lock,
+                                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                                glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.30f),
+                                iconTint = MaterialTheme.colorScheme.secondary,
+                                contentDescription = stringResource(R.string.lock),
+                                onClick = onLock,
+                                buttonSize = 40.dp,
+                                iconSize = 19.dp,
                             )
                         }
-                        IconButton(onClick = onOpenSettings) {
-                            Icon(
-                                Icons.Filled.Settings,
-                                contentDescription = stringResource(R.string.settings),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
+                        FeatheredOrbIcon(
+                            icon = Icons.Filled.List,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            glowColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            contentDescription = stringResource(R.string.record_list),
+                            onClick = onOpenList,
+                            buttonSize = 40.dp,
+                            iconSize = 19.dp,
+                        )
+                        FeatheredOrbIcon(
+                            icon = Icons.Filled.Settings,
+                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                            glowColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.30f),
+                            iconTint = MaterialTheme.colorScheme.tertiary,
+                            contentDescription = stringResource(R.string.settings),
+                            onClick = onOpenSettings,
+                            buttonSize = 40.dp,
+                            iconSize = 19.dp,
+                        )
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
@@ -320,7 +378,10 @@ fun RecordScreen(
                             darkTheme = isDark,
                             onStart = {
                                 if (!state.hasPermission) onRequestPermission()
-                                else viewModel.onStartPressed()
+                                else {
+                                    haptics.confirm()
+                                    viewModel.onStartPressed()
+                                }
                             },
                         )
                         RecordingService.Phase.BUFFERING -> BufferingContent(
@@ -331,13 +392,24 @@ fun RecordScreen(
                             logoReturn = logoReturn.value,
                             screenWidthPx = screenWidthPx,
                             screenHeightPx = screenHeightPx,
-                            onPause = { viewModel.onPausePressed() },
+                            elapsedMs = recordingElapsedMs,
+                            onPause = {
+                                haptics.confirm()
+                                viewModel.onPausePressed()
+                            },
                             saving = state.saving,
                         )
                         RecordingService.Phase.REVIEW -> ReviewContent(
                             darkTheme = isDark,
-                            onSave = { viewModel.onSavePressed() },
-                            onDelete = { verifyDelete = true },
+                            recordedMs = recordingElapsedMs,
+                            onSave = {
+                                haptics.confirm()
+                                viewModel.onSavePressed()
+                            },
+                            onDelete = {
+                                haptics.reject()
+                                verifyDelete = true
+                            },
                         )
                     }
                 }
@@ -370,6 +442,16 @@ private fun IdleContent(hasPermission: Boolean, darkTheme: Boolean, onStart: () 
         ),
         label = "breath_scale",
     )
+    // 提示文字极缓呼吸 (0.75↔1.0), 让静止页也有生命感
+    val hintAlpha by infinite.animateFloat(
+        initialValue = 0.75f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "hint_alpha",
+    )
 
     // 开始键点击反馈: 无 ripple (消除点击时矩形黑底), 用整体缩放模拟"圆形"按压.
     // 点击判定范围不变 (仍是整个 200dp 区域), 只是视觉反馈变圆.
@@ -391,6 +473,7 @@ private fun IdleContent(hasPermission: Boolean, darkTheme: Boolean, onStart: () 
             else stringResource(R.string.mic_permission_needed),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp,
+            modifier = Modifier.alpha(hintAlpha),
         )
         Spacer(Modifier.height(36.dp))
 
@@ -467,6 +550,7 @@ private fun IdleContent(hasPermission: Boolean, darkTheme: Boolean, onStart: () 
             else stringResource(R.string.mic_permission_needed_short),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.sp,
+            modifier = Modifier.alpha(hintAlpha),
         )
     }
 }
@@ -484,6 +568,7 @@ private fun BufferingContent(
     logoReturn: Float,
     screenWidthPx: Float,
     screenHeightPx: Float,
+    elapsedMs: Long,
     onPause: () -> Unit,
     saving: Boolean,
 ) {
@@ -494,11 +579,7 @@ private fun BufferingContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(72.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primaryContainer,
-                )
+                LoadingPulse(dotSize = 10.dp)
                 Spacer(Modifier.height(16.dp))
                 Text(
                     stringResource(R.string.saving),
@@ -507,6 +588,22 @@ private fun BufferingContent(
                 )
             }
         } else {
+            // ── 录音时长: 顶部大号等宽数字, 随频谱一起浮现 ──
+            if (animPhase == AnimPhase.VISUALIZER) {
+                Text(
+                    formatElapsed(elapsedMs),
+                    style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 20.dp)
+                        .graphicsLayer {
+                            alpha = waveReveal.coerceIn(0f, 1f)
+                            translationY = (1f - waveReveal.coerceIn(0f, 1f)) * 12.dp.toPx()
+                        },
+                )
+            }
+
             // ── 流体能量区域 (Logo 消失后才出现, 占 38%底部, 光从 logo 消失处晕开) ──
             if (animPhase == AnimPhase.VISUALIZER) {
                 Box(
@@ -533,6 +630,7 @@ private fun BufferingContent(
                 ReturningLogo(
                     progress = logoReturn,
                     screenWidthPx = screenWidthPx,
+                    amplitude = amplitude,
                     onClick = onPause,
                 )
             }
@@ -681,8 +779,23 @@ private fun FallingLogo(progress: Float, screenHeightPx: Float) {
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun ReturningLogo(progress: Float, screenWidthPx: Float, onClick: () -> Unit) {
+private fun ReturningLogo(
+    progress: Float,
+    screenWidthPx: Float,
+    amplitude: Float,
+    onClick: () -> Unit,
+) {
     val p = progress.coerceIn(0f, 1f)
+    val amp = amplitude.coerceIn(0f, 1f)
+
+    // 按压果冻感: 按下快速收缩, 松手弹性回弹
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = if (pressed) EchoMotion.fastEffects() else EchoMotion.fastSpatial(),
+        label = "pause_press",
+    )
 
     // 飞行位置: p=0 → 屏幕左外; p=1 → 屏幕中心 (缓动已由动画驱动, 起飞快/到点急停)
     val xOffset = screenWidthPx * (p - 1f)
@@ -715,23 +828,27 @@ private fun ReturningLogo(progress: Float, screenWidthPx: Float, onClick: () -> 
                 .offset { IntOffset(xOffset.roundToInt(), 0) }
                 .size(160.dp)
                 .graphicsLayer {
-                    scaleX = deformX * floatScale
-                    scaleY = deformY * floatScale
+                    scaleX = deformX * floatScale * pressScale
+                    scaleY = deformY * floatScale * pressScale
                     alpha = fadeAlpha
                 }
                 .clip(CircleShape)
-                .clickable(onClick = onClick),
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClick = onClick,
+                ),
             contentAlignment = Alignment.Center,
         ) {
-            // 光晕 (同开始键) — 柔和径向光, 不再用 elevation 阴影 (多边形影块已移除)
+            // 光晕 (同开始键) — 强度随声音呼吸: 录音时它也是一枚"能量球"
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.07f),
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f + 0.12f * amp),
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.05f + 0.05f * amp),
                                 Color.Transparent,
                             ),
                         ),
@@ -771,12 +888,21 @@ private fun ReturningLogo(progress: Float, screenWidthPx: Float, onClick: () -> 
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun ReviewContent(darkTheme: Boolean, onSave: () -> Unit, onDelete: () -> Unit) {
+private fun ReviewContent(darkTheme: Boolean, recordedMs: Long, onSave: () -> Unit, onDelete: () -> Unit) {
     // 删除键: 淡粉色调 (用户要求"淡一点, 粉红一点"), 暗黑主题下用更亮的粉色
     val deleteColor = if (darkTheme) Color(0xFFE85D7F) else Color(0xFFF48FB1)
     val deleteGlow = if (darkTheme) Color(0xFFFF7A9C) else Color(0xFFFFB3C6)
     val saveColor = MaterialTheme.colorScheme.primary
     val saveGlow = MaterialTheme.colorScheme.primary
+
+    // 错峰弹入: 保存先落位, 删除 80ms 后跟上 (弹簧轻微过冲, 而非同时弹出)
+    val appearSave = remember { Animatable(0f) }
+    val appearDelete = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { appearSave.animateTo(1f, EchoMotion.fastSpatial()) }
+    LaunchedEffect(Unit) {
+        delay(80)
+        appearDelete.animateTo(1f, EchoMotion.fastSpatial())
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -784,26 +910,50 @@ private fun ReviewContent(darkTheme: Boolean, onSave: () -> Unit, onDelete: () -
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
+            stringResource(R.string.recorded_duration, formatElapsed(recordedMs)),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        Text(
             stringResource(R.string.review_title),
             fontWeight = FontWeight.SemiBold,
             fontSize = 18.sp,
             modifier = Modifier.padding(bottom = 48.dp),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
-            FeatheredPillButton(
-                icon = Icons.Filled.Save,
-                label = stringResource(R.string.save),
-                color = saveColor,
-                glowColor = saveGlow,
-                onClick = onSave,
-            )
-            FeatheredPillButton(
-                icon = Icons.Filled.Delete,
-                label = stringResource(R.string.delete),
-                color = deleteColor,
-                glowColor = deleteGlow,
-                onClick = onDelete,
-            )
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    val a = appearSave.value
+                    scaleX = 0.6f + 0.4f * a
+                    scaleY = 0.6f + 0.4f * a
+                    alpha = a.coerceIn(0f, 1f)
+                },
+            ) {
+                FeatheredPillButton(
+                    icon = Icons.Filled.Save,
+                    label = stringResource(R.string.save),
+                    color = saveColor,
+                    glowColor = saveGlow,
+                    onClick = onSave,
+                )
+            }
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    val a = appearDelete.value
+                    scaleX = 0.6f + 0.4f * a
+                    scaleY = 0.6f + 0.4f * a
+                    alpha = a.coerceIn(0f, 1f)
+                },
+            ) {
+                FeatheredPillButton(
+                    icon = Icons.Filled.Delete,
+                    label = stringResource(R.string.delete),
+                    color = deleteColor,
+                    glowColor = deleteGlow,
+                    onClick = onDelete,
+                )
+            }
         }
     }
 }
