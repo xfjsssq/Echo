@@ -70,9 +70,10 @@ fun SpectrumBars(
     val currentReveal by rememberUpdatedState(reveal)
     val currentBg by rememberUpdatedState(backgroundColor)
 
-    // 极光配色: 声波蓝 ↔ 极光绿 流动 (用户指定, 替代原暖橙+冷蓝)
-    val auroraBlue = MaterialTheme.colorScheme.secondary    // 声波蓝 #4D8CFF
-    val auroraGreen = Color(0xFF3DDC97)                     // 极光绿
+    // 极光配色 (柔和版, 浓度对齐 0.19 的容器色观感 — 饱和纯色会显眼且辉光/填充分层明显):
+    // 淡声波蓝 ↔ 淡极光绿, 保留蓝绿流动方向
+    val auroraBlue = Color(0xFF9DBDFF)                     // 淡蓝 (≈Sky80)
+    val auroraGreen = Color(0xFF9EEBCC)                    // 淡极光绿
 
     // ── 逐帧更新: 帧率无关时间步 + 指数平滑按帧时长归一 (60fps 调参基准) ──
     LaunchedEffect(Unit) {
