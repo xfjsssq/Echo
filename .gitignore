@@ -17,6 +17,7 @@ _test_cp.txt
 _cp.txt
 *.log
 *.apk
+!releases/*.apk
 
 # local test wrappers (not part of shipped product)
 test_runner.sh

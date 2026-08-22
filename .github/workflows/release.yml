@@ -1,0 +1,23 @@
+name: Auto Release
+
+# 打 v* tag 时自动创建 GitHub Release 并把 releases/ 下的 APK 传上去.
+# 这样发布走 GitHub 服务器, 不受本地网络限制 (本机 HTTPS 到 GitHub 被墙).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Release and upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: releases/*.apk
+          generate_release_notes: true
