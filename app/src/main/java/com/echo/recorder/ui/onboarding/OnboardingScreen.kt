@@ -15,7 +15,9 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,10 +57,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -83,15 +89,16 @@ private data class OnboardingCard(
     val titleRes: Int,
     val textRes: Int,
     val actionRes: Int? = null,
+    val imageRes: Int? = null,
 )
 
 private val CARDS = listOf(
-    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding1_title, R.string.onboarding1_text),
-    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding2_title, R.string.onboarding2_text),
-    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding3_title, R.string.onboarding3_text),
+    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding1_title, R.string.onboarding1_text, imageRes = R.drawable.onboarding_img_1),
+    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding2_title, R.string.onboarding2_text, imageRes = R.drawable.onboarding_img_2),
+    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding3_title, R.string.onboarding3_text, imageRes = R.drawable.onboarding_img_3),
     // 公共目录备份: 永远默认开启, 卡片仅告知功能, 不提供开关/按钮, 不显示路径.
-    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding4_title, R.string.onboarding4_text),
-    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding5_title, R.string.onboarding5_text),
+    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding4_title, R.string.onboarding4_text, imageRes = R.drawable.onboarding_img_4),
+    OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding5_title, R.string.onboarding5_text, imageRes = R.drawable.onboarding_img_5),
 )
 
 /** 卡片类型 → 展示图标. */
@@ -180,8 +187,7 @@ fun OnboardingScreen(
                 ) { i ->
                     val card = CARDS[i]
 
-                    // 图标徽章: 圆形渐变小徽章 (独立分区, 与文字彻底分离, 不可能重叠)
-                    val icon: ImageVector = cardIcon(card.type)
+                    // 顶部视觉: 带插画的卡显示全宽圆角图, 其余显示圆形渐变徽章 (独立分区, 与文字不可能重叠)
                     val badgeBreath = rememberInfiniteTransition(label = "badge_breath")
                     val badgeScale by badgeBreath.animateFloat(
                         initialValue = 1f,
@@ -192,43 +198,66 @@ fun OnboardingScreen(
                         ),
                         label = "badge_scale",
                     )
-                    Box(
-                        modifier = Modifier.size(128.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        // 渐变底 + 顶部高光, 猫咪图标的暖橙→声波蓝
+                    // AnimatedContent 的多个子节点是叠放 (Box 语义) 而非垂直排布 —
+                    // 此前圆点/标题/正文直接叠在图片上 ("文字堆叠") 即此根因, 必须包一层 Column.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (card.imageRes != null) {
+                        // 固定 4:3 容器 + Crop: 图比例略有出入也不留黑边; 内层图轻微呼吸
                         Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .scale(badgeScale)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.primaryContainer,
-                                            MaterialTheme.colorScheme.secondaryContainer,
-                                        )
-                                    )
-                                ),
-                        )
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                            modifier = Modifier.size(88.dp),
+                                .fillMaxWidth()
+                                .aspectRatio(4f / 3f)
+                                .clip(RoundedCornerShape(20.dp)),
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    icon,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(44.dp),
-                                )
+                            Image(
+                                painter = painterResource(card.imageRes),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .scale(badgeScale),
+                            )
+                        }
+                    } else {
+                        val icon: ImageVector = cardIcon(card.type)
+                        Box(
+                            modifier = Modifier.size(128.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            // 渐变底 + 顶部高光, 猫咪图标的暖橙→声波蓝
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .scale(badgeScale)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                MaterialTheme.colorScheme.primaryContainer,
+                                                MaterialTheme.colorScheme.secondaryContainer,
+                                            )
+                                        )
+                                    ),
+                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                modifier = Modifier.size(88.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        icon,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(44.dp),
+                                    )
+                                }
                             }
                         }
                     }
 
                     // 页面指示圆点: 尺寸/颜色弹簧过渡 (不再瞬跳).
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(12.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -259,6 +288,7 @@ fun OnboardingScreen(
                         else -> PlainCardContent(
                             card = card,
                         )
+                    }
                     }
                 }
 
@@ -319,7 +349,7 @@ private fun PlainCardContent(
         style = MaterialTheme.typography.headlineSmall,
         color = MaterialTheme.colorScheme.onSurface,
         textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 24.dp),
+        modifier = Modifier.padding(top = 12.dp),
     )
     Text(
         stringResource(card.textRes),

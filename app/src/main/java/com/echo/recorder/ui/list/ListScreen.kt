@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -136,9 +135,19 @@ private const val MIN_PLAYABLE_MS = 1000L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
+fun ListScreen(
+    viewModel: ListViewModel,
+    onOpenPublicDir: () -> Unit = {},
+    onOpenPasswordSetup: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // 删除/导入密码门控共用的哈希读取 (需在 Scaffold 之前声明供顶部按钮捕获).
+    val listSettings = remember { SettingsRepository(context) }
+    val listStoredHash by produceState<String?>(initialValue = null) {
+        value = listSettings.passwordHash.first()
+    }
 
     val player = remember { DefaultAudioPlayerFactory().create() }
     DisposableEffect(Unit) {
@@ -151,29 +160,27 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
 
     var showCalendar by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
+    // 公共目录功能门槛: 从未设置过密码时引导先去设置密码.
+    var showImportNeedPassword by remember { mutableStateOf(false) }
     // 重命名目标录音 id.
     var renameTarget by remember { mutableStateOf<String?>(null) }
     // 删除密码门控: 单条删除 / 批量删除需验证密码.
     var verifySingleDelete by remember { mutableStateOf<String?>(null) }
     var verifyBatchDelete by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
+    // 每个 Tab 独立滚动状态: 临时 tab 顶部比长期 tab 多一条提示栏, 同一索引在两 tab 对应
+    // 不同内容, 共享锚点会在切换后错位; 过渡期间两个 LazyColumn 也不能再挂同一个 state.
+    val tempListState = rememberLazyListState()
+    val longTermListState = rememberLazyListState()
 
     val items = if (state.tab == ListTab.TEMPORARY) state.temporary else state.longTerm
-    // 按天分组, 天序降序 (最新的一天在最上), 天内保持数据源顺序 (最新录音在上)
-    val groups = items.groupBy { startOfDay(it.createdAt) }
-    val orderedDays = groups.keys.sortedDescending()
-    // flat list with stable keys for LazyColumn indexing + date scroll.
-    data class Entry(val key: String, val isHeader: Boolean, val day: String, val rec: Recording?)
-    val flat = orderedDays.flatMap { dayEpoch ->
-        val dayItems = groups.getValue(dayEpoch)
-        listOf(Entry("h-$dayEpoch", true, dateKey(dayEpoch), null)) + dayItems.map { Entry(it.id, false, dateKey(dayEpoch), it) }
-    }
+    val flat = buildFlat(items)
     var scrollTarget by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(scrollTarget) {
         val target = scrollTarget ?: return@LaunchedEffect
         val idx = flat.indexOfFirst { it.isHeader && it.day == target }
         if (idx >= 0) {
-            listState.animateScrollToItem(idx)
+            val st = if (state.tab == ListTab.TEMPORARY) tempListState else longTermListState
+            st.animateScrollToItem(idx)
         } else {
             Toast.makeText(context, context.getString(R.string.no_recording_that_day), Toast.LENGTH_SHORT).show()
         }
@@ -205,7 +212,10 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                     actions = {
                         if (state.tab == ListTab.LONG_TERM) {
                             IconButton(
-                                onClick = { showImport = true },
+                                onClick = {
+                                    // 公共目录功能门槛: 从未设置过密码时先引导设置, 不允许直接导入.
+                                    if (listStoredHash != null) showImport = true else showImportNeedPassword = true
+                                },
                                 modifier = Modifier.echoPressScale(0.9f),
                             ) {
                                 Icon(Icons.Filled.FileOpen, contentDescription = stringResource(R.string.import_from_public_dir))
@@ -296,21 +306,26 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
         AnimatedMode(
             targetState = state.tab,
             modifier = Modifier.fillMaxSize().padding(padding),
-        ) { _ ->
-            if (items.isEmpty()) {
+        ) { tab ->
+            // 每页只读自己 Tab 的数据与滚动状态: 退出页保留旧 Tab 画面,
+            // 过渡期间两个 LazyColumn 不再共享同一个 LazyListState.
+            val tabItems = if (tab == ListTab.TEMPORARY) state.temporary else state.longTerm
+            val tabFlat = buildFlat(tabItems)
+            val tabListState = if (tab == ListTab.TEMPORARY) tempListState else longTermListState
+            if (tabItems.isEmpty()) {
                 EmptyList(
-                    recordingTab = state.tab,
+                    recordingTab = tab,
                     modifier = Modifier.animatedListEntrance(index = 0, withBlur = false),
                 )
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), state = tabListState) {
                 // 临时录音提示条: 提醒 24h 自动删除
-                if (state.tab == ListTab.TEMPORARY) {
+                if (tab == ListTab.TEMPORARY) {
                     item(key = "temp_expiry_hint") {
                         TempExpiryHint(modifier = Modifier.animatedListEntrance(index = 0, withBlur = false))
                     }
                 }
-                itemsIndexed(flat, key = { _, entry -> entry.key }) { index, entry ->
+                itemsIndexed(tabFlat, key = { _, entry -> entry.key }) { index, entry ->
                     if (entry.isHeader) {
                         Row(
                             modifier = Modifier
@@ -387,11 +402,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
         )
     }
 
-    // 删除密码门控.
-    val listSettings = remember { SettingsRepository(context) }
-    val listStoredHash by produceState<String?>(initialValue = null) {
-        value = listSettings.passwordHash.first()
-    }
+    // 删除密码门控 (listSettings/listStoredHash 已前置到函数开头).
 
     // 重命名录音.
     renameTarget?.let { renameId ->
@@ -463,6 +474,26 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
         }
     }
 
+    // 公共目录功能门槛: 未设置密码时引导先设置 (列表页导入入口的拦截对话框).
+    if (showImportNeedPassword) {
+        AlertDialog(
+            onDismissRequest = { showImportNeedPassword = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text(stringResource(R.string.public_dir_password_required_title)) },
+            text = { Text(stringResource(R.string.public_dir_password_required_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showImportNeedPassword = false
+                    onOpenPasswordSetup()
+                }) { Text(stringResource(R.string.go_set_password)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportNeedPassword = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
     // 从公共目录导入 (含密码门禁).
     if (showImport) {
         ImportFromPublicDirDialog(
@@ -516,7 +547,10 @@ private fun ImportFromPublicDirDialog(
     var verified by remember { mutableStateOf(SessionAuth.savePublicUnlocked.value) }
     // 验证通过后先关闭密码对话框 (让关闭动画走完), 延迟片刻再打开导入对话框,
     // 避免两个 Dialog 窗口一关一开在部分 ROM 上互相抢占 (扫描不执行/输入法丢失).
-    var showImportDialog by remember { mutableStateOf(false) }
+    // ⚠️ 初始值取 verified: 同会话二次进入时 SessionAuth 已免密 (verified 直接为 true),
+    //    若固定初始化 false 会卡死在下方 "if (!showImportDialog) return" —— 什么都不渲染,
+    //    用户只能杀掉应用重进 (导入"只能一次"的病根).
+    var showImportDialog by remember { mutableStateOf(verified) }
     var importable by remember { mutableStateOf<List<PublicDirManager.PublicFileInfo>>(emptyList()) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loading by remember { mutableStateOf(false) }
@@ -532,6 +566,20 @@ private fun ImportFromPublicDirDialog(
     }
 
     if (!verified) {
+        if (storedHash == null) {
+            // 防线: 从未设置过密码 → 不允许使用导入 (主入口已引导, 此处兜底拦截).
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                shape = RoundedCornerShape(24.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                title = { Text(stringResource(R.string.public_dir_password_required_title)) },
+                text = { Text(stringResource(R.string.public_dir_password_required_text)) },
+                confirmButton = {
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+                },
+            )
+            return
+        }
         if (passwordEnabled) {
             PasswordPromptDialog(
                 storedHash = storedHash,
@@ -546,6 +594,7 @@ private fun ImportFromPublicDirDialog(
                 onDismiss = onDismiss,
             )
         } else {
+            // 设置过密码但当前关闭了验证: 与删除录音门控同语义, 直接放行.
             LaunchedEffect(Unit) {
                 verified = true
                 showImportDialog = true
@@ -825,8 +874,14 @@ private fun RecordingRow(
 ) {
     val painterSelect = if (selected) Icons.Filled.CheckCircle else null
     // 空片段判定: 时长不足 1 秒. 若文件实际存在且大小 > 0 但读不到时长, 视为"已损坏".
-    val fileExists = runCatching { java.io.File(java.net.URI(rec.fileUrl)).exists() }.getOrDefault(false)
-    val fileSize = runCatching { java.io.File(java.net.URI(rec.fileUrl)).length() }.getOrDefault(0L)
+    // remember 缓存文件系统查询 — 此前每次重组都 File.exists()/length() (播放中每帧重组
+    // = 每帧主线程磁盘 I/O, 是列表页掉帧元凶), 现只在 rec 变化时查一次.
+    val fileExists by remember(rec.id, rec.fileUrl) {
+        mutableStateOf(runCatching { java.io.File(java.net.URI(rec.fileUrl)).exists() }.getOrDefault(false))
+    }
+    val fileSize by remember(rec.id, rec.fileUrl) {
+        mutableStateOf(runCatching { java.io.File(java.net.URI(rec.fileUrl)).length() }.getOrDefault(0L))
+    }
     val isEmpty = rec.durationMs < MIN_PLAYABLE_MS
     val isCorrupted = isEmpty && fileExists && fileSize > 0
 
@@ -1286,6 +1341,19 @@ private fun startOfDay(epochMs: Long): Long = java.util.Calendar.getInstance().a
 
 private fun startOfDayFromLocal(date: LocalDate): Long =
     date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+/** 日期分组拍平条目 (表头 + 天内录音), 供 LazyColumn 索引 + 日期定位. */
+private data class DayEntry(val key: String, val isHeader: Boolean, val day: String, val rec: Recording?)
+
+/** 按天分组, 天序降序 (最新的一天在最上), 天内保持数据源顺序 (最新录音在上). */
+private fun buildFlat(items: List<Recording>): List<DayEntry> {
+    val groups = items.groupBy { startOfDay(it.createdAt) }
+    return groups.keys.sortedDescending().flatMap { dayEpoch ->
+        val dayItems = groups.getValue(dayEpoch)
+        listOf(DayEntry("h-$dayEpoch", true, dateKey(dayEpoch), null)) +
+            dayItems.map { DayEntry(it.id, false, dateKey(dayEpoch), it) }
+    }
+}
 
 /** 空列表占位: 图标 + 文案. */
 @Composable
