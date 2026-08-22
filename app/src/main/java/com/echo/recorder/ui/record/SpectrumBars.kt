@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import kotlin.math.floor
@@ -58,12 +57,12 @@ fun SpectrumBars(
     val bell = remember {
         FloatArray(N) { i ->
             val x = i / (N - 1f) - 0.5f
-            kotlin.math.exp(-(x * 3.4f) * (x * 3.4f))
+            // 2.2 (原 3.4): 钟形更平缓 — 两侧保有 ~30% 基础高度, 边缘也会随噪声舞动
+            kotlin.math.exp(-(x * 2.2f) * (x * 2.2f))
         }
     }
 
     val fillPaint = remember { Paint() }
-    val linePaint = remember { Paint() }
     val glowPaint = remember { Paint() }
     val path = remember { Path() }
 
@@ -71,9 +70,9 @@ fun SpectrumBars(
     val currentReveal by rememberUpdatedState(reveal)
     val currentBg by rememberUpdatedState(backgroundColor)
 
-    val warmTheme = MaterialTheme.colorScheme.primaryContainer   // 暖橙
-    val coolTheme = MaterialTheme.colorScheme.secondaryContainer // 声波蓝
-    val accentTheme = MaterialTheme.colorScheme.primary          // 顶线亮色
+    // 极光配色: 声波蓝 ↔ 极光绿 流动 (用户指定, 替代原暖橙+冷蓝)
+    val auroraBlue = MaterialTheme.colorScheme.secondary    // 声波蓝 #4D8CFF
+    val auroraGreen = Color(0xFF3DDC97)                     // 极光绿
 
     // ── 逐帧更新: 帧率无关时间步 + 指数平滑按帧时长归一 (60fps 调参基准) ──
     LaunchedEffect(Unit) {
@@ -131,14 +130,15 @@ fun SpectrumBars(
             (1f + 2.70158f * x * x * x + 1.70158f * x * x).coerceAtLeast(0f)
         }
 
-        // 白 → 品牌色 (前 25% 纯白衔接白球消散), 再与背景混合柔化
+        // 白 → 极光色 (前 25% 纯白衔接白球消散), 再与背景混合柔化
         val cr = ((r - 0.25f) / 0.75f).coerceIn(0f, 1f)
-        val warm = lerp(currentBg, lerp(Color.White, warmTheme, cr), 0.85f)
-        val cool = lerp(currentBg, lerp(Color.White, coolTheme, cr), 0.85f)
+        val auroraA = lerp(currentBg, lerp(Color.White, auroraBlue, cr), 0.85f)
+        val auroraB = lerp(currentBg, lerp(Color.White, auroraGreen, cr), 0.85f)
 
         // ── 贴底连续曲面: 采样点 → 平滑 Path → 闭合到容器底边 ──
         val bottom = h + 2f // 略微超出, 保证无缝贴边
         val maxBand = h * 0.82f
+        // draw 内读取包络 → 每帧失效重绘 (帧循环写入驱动)
         val env = smoothAmp.floatValue
 
         path.reset()
@@ -154,14 +154,14 @@ fun SpectrumBars(
         path.lineTo(0f, bottom)
         path.close()
 
-        // 流动渐变: [暖→冷→暖] 循环 + 矩阵平移 (零分配); REPEATED 保证接缝连续
+        // 流动渐变: [蓝→绿→蓝] 极光循环 + 矩阵平移 (零分配); REPEATED 保证接缝连续
         val gradWidth = w * 1.6f
         val shader = android.graphics.LinearGradient(
             0f, 0f, gradWidth, 0f,
             intArrayOf(
-                warm.copy(alpha = 0.90f * r).toArgb(),
-                cool.copy(alpha = 0.92f * r).toArgb(),
-                warm.copy(alpha = 0.90f * r).toArgb(),
+                auroraA.copy(alpha = 0.90f * r).toArgb(),
+                auroraB.copy(alpha = 0.92f * r).toArgb(),
+                auroraA.copy(alpha = 0.90f * r).toArgb(),
             ),
             floatArrayOf(0f, 0.5f, 1f),
             android.graphics.Shader.TileMode.REPEAT,
@@ -171,7 +171,7 @@ fun SpectrumBars(
         matrix.setTranslate(-phase * gradWidth, 0f)
         shader.setLocalMatrix(matrix)
 
-        // 1. 柔光层: 同一路径描粗+模糊 (整条一次, 替代 v2 的 40 次)
+        // 1. 柔光层: 同一路径描粗+模糊 (整条一次) — 流动感/模糊感核心, 勿动参数
         glowPaint.shader = shader
         glowPaint.style = PaintingStyle.Stroke
         glowPaint.strokeWidth = w * 0.05f
@@ -179,17 +179,10 @@ fun SpectrumBars(
             android.graphics.BlurMaskFilter(w * 0.030f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         drawContext.canvas.drawPath(path, glowPaint)
 
-        // 2. 填充层: 流动渐变面
+        // 2. 填充层: 流动渐变面 (无顶线 — 顶部只留柔光过渡)
         fillPaint.shader = shader
         fillPaint.style = PaintingStyle.Fill
         drawContext.canvas.drawPath(path, fillPaint)
-
-        // 3. 顶线: 亮色细线勾边, 宽度随能量呼吸
-        linePaint.color = lerp(Color.White, accentTheme, cr).copy(alpha = (0.55f + 0.35f * env) * r)
-        linePaint.style = PaintingStyle.Stroke
-        linePaint.strokeWidth = 1.5f + 2.5f * env
-        linePaint.strokeCap = StrokeCap.Round
-        drawContext.canvas.drawPath(path, linePaint)
     }
 }
 
