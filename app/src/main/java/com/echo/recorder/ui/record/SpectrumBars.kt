@@ -70,10 +70,9 @@ fun SpectrumBars(
     val currentReveal by rememberUpdatedState(reveal)
     val currentBg by rememberUpdatedState(backgroundColor)
 
-    // 极光配色 (柔和版, 浓度对齐 0.19 的容器色观感 — 饱和纯色会显眼且辉光/填充分层明显):
-    // 淡声波蓝 ↔ 淡极光绿, 保留蓝绿流动方向
-    val auroraBlue = Color(0xFF9DBDFF)                     // 淡蓝 (≈Sky80)
-    val auroraGreen = Color(0xFF9EEBCC)                    // 淡极光绿
+    // 极光配色 (更淡档, 用户两轮反馈要求): 高明度低饱和的蓝绿雾感
+    val auroraBlue = Color(0xFFCDE0FF)                     // 淡蓝
+    val auroraGreen = Color(0xFFD2F3E4)                    // 淡极光绿
 
     // ── 逐帧更新: 帧率无关时间步 + 指数平滑按帧时长归一 (60fps 调参基准) ──
     LaunchedEffect(Unit) {
@@ -172,10 +171,11 @@ fun SpectrumBars(
         matrix.setTranslate(-phase * gradWidth, 0f)
         shader.setLocalMatrix(matrix)
 
-        // 1. 柔光层: 同一路径描粗+模糊 (整条一次) — 流动感/模糊感核心, 勿动参数
+        // 1. 柔光层: 同一路径整体填充+模糊 — 光从曲面内部向外连续渐晕.
+        //    (v3 原用 Stroke 描边: 沿轮廓画独立亮带, 与内部填充浓度突变 = 用户看到的
+        //    "顶部亮线式分界", 改 Fill 后边缘光与主体融为一体, 分界消失)
         glowPaint.shader = shader
-        glowPaint.style = PaintingStyle.Stroke
-        glowPaint.strokeWidth = w * 0.05f
+        glowPaint.style = PaintingStyle.Fill
         glowPaint.asFrameworkPaint().maskFilter =
             android.graphics.BlurMaskFilter(w * 0.030f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         drawContext.canvas.drawPath(path, glowPaint)
