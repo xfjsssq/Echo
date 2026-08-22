@@ -171,18 +171,21 @@ fun SpectrumBars(
         matrix.setTranslate(-phase * gradWidth, 0f)
         shader.setLocalMatrix(matrix)
 
-        // 1. 柔光层: 同一路径整体填充+模糊 — 光从曲面内部向外连续渐晕.
-        //    (v3 原用 Stroke 描边: 沿轮廓画独立亮带, 与内部填充浓度突变 = 用户看到的
-        //    "顶部亮线式分界", 改 Fill 后边缘光与主体融为一体, 分界消失)
+        // 1. 辉光层: 沿曲面的外圈光晕 (Stroke 描边 + 大模糊) — 用户钦点的边缘发光, 恢复
         glowPaint.shader = shader
-        glowPaint.style = PaintingStyle.Fill
+        glowPaint.style = PaintingStyle.Stroke
+        glowPaint.strokeWidth = w * 0.05f
         glowPaint.asFrameworkPaint().maskFilter =
             android.graphics.BlurMaskFilter(w * 0.030f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         drawContext.canvas.drawPath(path, glowPaint)
 
-        // 2. 填充层: 流动渐变面 (无顶线 — 顶部只留柔光过渡)
+        // 2. 填充层: 流动渐变面 + 轻微模糊 —
+        //    分界的真身是本层无模糊的"硬边": 锐利的填充边 vs 模糊的外圈辉光 = 浓度突变线.
+        //    填充自身柔化后, 主体边缘渐入辉光, 光从内部长到边缘, 分界消失.
         fillPaint.shader = shader
         fillPaint.style = PaintingStyle.Fill
+        fillPaint.asFrameworkPaint().maskFilter =
+            android.graphics.BlurMaskFilter(w * 0.012f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         drawContext.canvas.drawPath(path, fillPaint)
     }
 }

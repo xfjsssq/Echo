@@ -61,9 +61,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.echo.recorder.ui.common.AnimatedStep
 import com.echo.recorder.ui.common.LoadingPulse
-import com.echo.recorder.ui.common.StepDirection
 import com.echo.recorder.ui.common.echoPressScale
 import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.common.rememberShakeState
@@ -105,10 +103,7 @@ fun PasswordSetupScreen(
     // 内存中暂存的密码和恢复密钥, 待用户确认恢复密钥后才写入 DataStore.
     var pendingPassword by remember { mutableStateOf<Pair<String, String>?>(null) }
 
-    // 向导方向 + 错误反馈 (抖动 + Reject 触感) + 步骤触感
-    var prevStep by remember { mutableIntStateOf(0) }
-    val stepDirection = if (step > prevStep) StepDirection.Forward else StepDirection.Backward
-    LaunchedEffect(step) { prevStep = step }
+    // 错误反馈 (抖动 + Reject 触感) + 步骤触感
     val shake = rememberShakeState()
     val haptics = rememberEchoHaptics()
     LaunchedEffect(error) {
@@ -152,9 +147,11 @@ fun PasswordSetupScreen(
             StepDots(step = step, total = 4)
             Spacer(Modifier.height(28.dp))
 
-            // 向导步骤: 方向感知滑动过渡 (0选类型→1输入→2再输入→3恢复密钥), 不再硬切
-            AnimatedStep(targetState = step, direction = stepDirection) { s ->
-                when (s) {
+            // 向导步骤: 直接切换, 不做内容过渡 —
+            // (AnimatedContent 在 滚动+居中 布局里做高度动画时内容会溢出容器
+            //  叠到步骤点等元素上 (SizeTransform clip=false 放行溢出), 即三轮
+            //  "文字堆叠"的真身; 低频向导界面, 稳定 > 过渡)
+            when (step) {
                     0 -> TypeSelect(
                         onPickPin = { haptics.tick(); passwordType = "pin"; step = 1; error = false; errorMsg = null },
                         onPickMixed = { haptics.tick(); passwordType = "mixed"; step = 1; error = false; errorMsg = null },
@@ -234,7 +231,6 @@ fun PasswordSetupScreen(
                         onDone()
                     },
                 )
-                }
             }
         }
     }

@@ -102,6 +102,8 @@ fun SettingsScreen(
     var verifyDisablePassword by remember { mutableStateOf(false) }
     // 隐私政策.
     var showPrivacyPolicy by remember { mutableStateOf(false) }
+    // 公共目录功能门槛: 从未设置过密码时引导先去设置密码.
+    var showPublicDirNeedPassword by remember { mutableStateOf(false) }
 
     val storedHash by produceState<String?>(initialValue = null) {
         value = repo.passwordHash.first()
@@ -233,6 +235,24 @@ fun SettingsScreen(
         )
     }
 
+    // 公共目录功能门槛对话框.
+    if (showPublicDirNeedPassword) {
+        AlertDialog(
+            onDismissRequest = { showPublicDirNeedPassword = false },
+            title = { Text(stringResource(R.string.public_dir_password_required_title)) },
+            text = { Text(stringResource(R.string.public_dir_password_required_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPublicDirNeedPassword = false
+                    onOpenPasswordSetup()
+                }) { Text(stringResource(R.string.go_set_password)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPublicDirNeedPassword = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
     // 隐私政策.
     if (showPrivacyPolicy) {
         AlertDialog(
@@ -335,14 +355,17 @@ fun SettingsScreen(
             GroupTitle(stringResource(R.string.group_storage))
             SettingsCard(index = 2) {
                 // 公共目录备份永远默认开启, 不再提供开关, 仅保留"公共目录文件"入口.
+                // 门槛: 从未设置过密码时不允许进入 (公共目录含永久删除等敏感操作).
                 Preference(
                     title = stringResource(R.string.public_dir_files),
                     subtitle = stringResource(R.string.public_dir_files_subtitle),
-                ) { onOpenPublicDir() }
+                ) {
+                    if (storedHash != null) onOpenPublicDir() else showPublicDirNeedPassword = true
+                }
             }
 
-            // ---- 外观与语言 ----
-            GroupTitle(stringResource(R.string.group_appearance))
+            // ---- 语言 ---- (主题已随暗黑模式移除, 本组仅剩语言)
+            GroupTitle(stringResource(R.string.group_language))
             SettingsCard(index = 3) {
                 Preference(
                     title = stringResource(R.string.language),

@@ -95,6 +95,7 @@
     <string name="group_security">安全设置</string>
     <string name="group_storage">存储设置</string>
     <string name="group_appearance">外观与语言</string>
+    <string name="group_language">语言</string>
     <string name="group_help">帮助与关于</string>
     <!-- 缓冲时长 (标签由代码拼字符串资源, 这里提供单位). -->
     <string name="buffer_seconds_unit">秒</string>
@@ -226,6 +227,10 @@
     <string name="import_done">已导入 %1$d 个文件</string>
     <string name="import_no_new">没有可导入的新文件</string>
     <string name="public_dir_delete_note">将永久删除备份文件夹中的原始文件，不可恢复。应用内的录音不受影响。</string>
+    <string name="public_dir_delete_failed">删除失败，请重试</string>
+    <string name="public_dir_password_required_title">需要先设置密码</string>
+    <string name="public_dir_password_required_text">公共目录涉及备份文件的导入与永久删除，为安全起见，请先设置密码保护后再使用。</string>
+    <string name="go_set_password">去设置密码</string>
     <string name="public_dir_files_subtitle">查看备份文件夹中的文件</string>
     <string name="public_dir_choose_folder">允许访问</string>
     <string name="public_dir_choose_folder_note">录音会自动备份到系统下载文件夹的安全位置，卸载应用也不会丢失。请允许访问以继续。</string>

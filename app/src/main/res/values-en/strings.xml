@@ -95,6 +95,7 @@
     <string name="group_security">Security</string>
     <string name="group_storage">Storage</string>
     <string name="group_appearance">Appearance &amp; language</string>
+    <string name="group_language">Language</string>
     <string name="group_help">Help &amp; about</string>
     <!-- Buffer duration (labels are composed in code; units provided here). -->
     <string name="buffer_seconds_unit">s</string>
@@ -209,6 +210,10 @@
     <string name="import_done">Imported %1$d file(s)</string>
     <string name="import_no_new">No new files to import</string>
     <string name="public_dir_delete_note">This permanently deletes the original file in the backup folder. It cannot be undone. Recordings inside the app are not affected.</string>
+    <string name="public_dir_delete_failed">Failed to delete. Please try again.</string>
+    <string name="public_dir_password_required_title">Password Required</string>
+    <string name="public_dir_password_required_text">The public folder handles backup import and permanent deletion. For safety, please set up password protection before using it.</string>
+    <string name="go_set_password">Set Password</string>
     <string name="public_dir_files_subtitle">View files in the backup folder</string>
     <string name="public_dir_choose_folder">Allow access</string>
     <string name="public_dir_choose_folder_note">Recordings are automatically backed up to a safe location in the system Download folder and survive app uninstall. Allow access to continue.</string>
