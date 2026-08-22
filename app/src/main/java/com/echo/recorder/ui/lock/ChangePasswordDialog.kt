@@ -248,11 +248,10 @@ fun ResetRecoveryKeyDialog(
                     Text(
                         stringResource(R.string.recovery_key_warning),
                         color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     )
-                    Text(
-                        stringResource(R.string.recovery_key_label, newKey),
-                        style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
-                    )
+                    // 密钥卡片: 4 位分组 + 等宽数字 + 可复制 (修复原 24sp 一行放不下被裁)
+                    RecoveryKeyCard(key = newKey)
                 }
             },
             confirmButton = {

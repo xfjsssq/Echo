@@ -39,6 +39,8 @@ import com.echo.recorder.settings.PasswordCrypto
 import com.echo.recorder.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.echo.recorder.ui.common.AnimatedStep
 import com.echo.recorder.ui.common.StepDirection
 import com.echo.recorder.ui.common.rememberEchoHaptics
@@ -113,6 +115,8 @@ fun PasswordSetupScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(24.dp)
+                // 可滚动: 键盘弹出压缩视口/步骤过渡高度变化时不再挤压裁切内容
+                .verticalScroll(rememberScrollState())
                 .shake(shake),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -303,16 +307,16 @@ private fun SecondEnter(
 @Composable
 private fun RecoveryKeyShow(key: String, onFinish: () -> Unit) {
     Text(stringResource(R.string.recovery_key_title), style = MaterialTheme.typography.titleMedium)
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(12.dp))
     Text(
         stringResource(R.string.recovery_key_warning),
         color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodySmall,
+        textAlign = TextAlign.Center,
     )
     Spacer(Modifier.height(16.dp))
-    Text(
-        stringResource(R.string.recovery_key_label, key),
-        style = MaterialTheme.typography.headlineSmall,
-    )
+    // 密钥卡片: 4 位分组 + 等宽数字 + 可复制 (修复原 24sp 格式串一行放不下被裁的问题)
+    RecoveryKeyCard(key = key)
     Spacer(Modifier.height(24.dp))
     Button(onClick = onFinish, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.confirm))
