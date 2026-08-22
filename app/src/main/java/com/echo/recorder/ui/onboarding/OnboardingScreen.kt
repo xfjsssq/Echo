@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -130,11 +131,12 @@ fun OnboardingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .widthIn(max = 480.dp)
                     .background(
                         MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(20.dp),
+                        RoundedCornerShape(24.dp),
                     )
-                    .padding(24.dp),
+                    .padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 // 顶部: 右上角 × 跳过.
@@ -156,34 +158,34 @@ fun OnboardingScreen(
                     }
                 }
 
-                // 卡片主体: 徽章 + 圆点 + 内容 — 步骤切换时方向感知滑动过渡
+                // 卡片主体: 徽章 + 圆点 + 内容 — 整幅滑入/滑出 (零交叠, 不再"文字叠文字")
                 AnimatedContent(
                     targetState = index,
                     transitionSpec = {
                         if (targetState > initialState) {
-                            // 前进: 新卡从右侧滑入
+                            // 前进: 新卡从右侧屏外整幅滑入
                             (fadeIn(tween(300, easing = EchoMotion.EmphasizedDecelerate)) +
-                                slideInHorizontally(animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate)) { it / 5 }) togetherWith
+                                slideInHorizontally(animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate)) { it }) togetherWith
                                 (fadeOut(tween(200, easing = EchoMotion.EmphasizedAccelerate)) +
-                                    slideOutHorizontally(animationSpec = tween(200, easing = EchoMotion.EmphasizedAccelerate)) { -it / 5 })
+                                    slideOutHorizontally(animationSpec = tween(200, easing = EchoMotion.EmphasizedAccelerate)) { -it })
                         } else {
-                            // 后退: 新卡从左侧滑入
+                            // 后退: 新卡从左侧屏外整幅滑入
                             (fadeIn(tween(300, easing = EchoMotion.EmphasizedDecelerate)) +
-                                slideInHorizontally(animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate)) { -it / 5 }) togetherWith
+                                slideInHorizontally(animationSpec = tween(300, easing = EchoMotion.EmphasizedDecelerate)) { -it }) togetherWith
                                 (fadeOut(tween(200, easing = EchoMotion.EmphasizedAccelerate)) +
-                                    slideOutHorizontally(animationSpec = tween(200, easing = EchoMotion.EmphasizedAccelerate)) { it / 5 })
+                                    slideOutHorizontally(animationSpec = tween(200, easing = EchoMotion.EmphasizedAccelerate)) { it })
                         }
                     },
                     label = "onboarding_card",
                 ) { i ->
                     val card = CARDS[i]
 
-                    // 每个卡片的图标徽章 (渐变背景 + 大图标 + 缓慢呼吸), 呼应猫咪图标风格.
+                    // 图标徽章: 圆形渐变小徽章 (独立分区, 与文字彻底分离, 不可能重叠)
                     val icon: ImageVector = cardIcon(card.type)
                     val badgeBreath = rememberInfiniteTransition(label = "badge_breath")
                     val badgeScale by badgeBreath.animateFloat(
                         initialValue = 1f,
-                        targetValue = 1.03f,
+                        targetValue = 1.04f,
                         animationSpec = infiniteRepeatable(
                             animation = tween(2400, easing = FastOutSlowInEasing),
                             repeatMode = RepeatMode.Reverse,
@@ -191,40 +193,42 @@ fun OnboardingScreen(
                         label = "badge_scale",
                     )
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                        MaterialTheme.colorScheme.secondaryContainer,
-                                    )
-                                )
-                            ),
+                        modifier = Modifier.size(128.dp),
                         contentAlignment = Alignment.Center,
                     ) {
+                        // 渐变底 + 顶部高光, 猫咪图标的暖橙→声波蓝
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .scale(badgeScale)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.primaryContainer,
+                                            MaterialTheme.colorScheme.secondaryContainer,
+                                        )
+                                    )
+                                ),
+                        )
                         Surface(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                            modifier = Modifier
-                                .size(104.dp)
-                                .scale(badgeScale),
+                            modifier = Modifier.size(88.dp),
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     icon,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(52.dp),
+                                    modifier = Modifier.size(44.dp),
                                 )
                             }
                         }
                     }
 
                     // 页面指示圆点: 尺寸/颜色弹簧过渡 (不再瞬跳).
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(20.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -250,10 +254,12 @@ fun OnboardingScreen(
                         }
                     }
 
-                    // 内容区.
-                    PlainCardContent(
-                        card = card,
-                    )
+                    // 内容区 (标题/正文与徽章明确分区, 充足间距).
+                    when (card.type) {
+                        else -> PlainCardContent(
+                            card = card,
+                        )
+                    }
                 }
 
                 // 底部导航: 上一步 / 下一步 / 完成 (带触感反馈).

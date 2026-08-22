@@ -1,6 +1,12 @@
 package com.echo.recorder.ui.lock
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,17 +14,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,23 +44,31 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
 import com.echo.recorder.settings.PasswordCrypto
 import com.echo.recorder.settings.SettingsRepository
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.echo.recorder.ui.common.AnimatedStep
+import com.echo.recorder.ui.common.LoadingPulse
 import com.echo.recorder.ui.common.StepDirection
+import com.echo.recorder.ui.common.echoPressScale
 import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.common.rememberShakeState
 import com.echo.recorder.ui.common.shake
+import com.echo.recorder.ui.theme.EchoMotion
 
 /**
  * 密码设置流程.
@@ -70,15 +93,10 @@ fun PasswordSetupScreen(
     // 新输入框拿到焦点时 IME 自然延续, 避免"收起→立刻弹出"动画竞态导致键盘唤不醒.
     val keyboard = LocalSoftwareKeyboardController.current
 
-    // 0=选类型 1=第一次输入 2=第二次输入 3=恢复密钥展示
-    var step by remember { mutableIntStateOf(if (isChangePassword) 1 else 0) }
+    // 0=选类型 1=第一次输入 2=第二次输入 3=恢复密钥展示.
+    // 修改密码同样从选类型开始: 允许在 PIN 与扩展密码之间切换 (不再锁定原类型).
+    var step by remember { mutableIntStateOf(0) }
     var passwordType by remember { mutableStateOf("pin") }
-    // 修改密码: 读取原密码类型; 首次设置: 默认 "pin", 由用户在类型选择页决定.
-    LaunchedEffect(Unit) {
-        if (isChangePassword) {
-            repo.passwordType.first()?.let { passwordType = it }
-        }
-    }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
@@ -88,7 +106,7 @@ fun PasswordSetupScreen(
     var pendingPassword by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     // 向导方向 + 错误反馈 (抖动 + Reject 触感) + 步骤触感
-    var prevStep by remember { mutableIntStateOf(if (isChangePassword) 1 else 0) }
+    var prevStep by remember { mutableIntStateOf(0) }
     val stepDirection = if (step > prevStep) StepDirection.Forward else StepDirection.Backward
     LaunchedEffect(step) { prevStep = step }
     val shake = rememberShakeState()
@@ -117,10 +135,23 @@ fun PasswordSetupScreen(
                 .padding(24.dp)
                 // 可滚动: 键盘弹出压缩视口/步骤过渡高度变化时不再挤压裁切内容
                 .verticalScroll(rememberScrollState())
+                // 输入步骤防误触: 消费空白区域的点击 (不抢焦点、不给系统/输入法据此收起键盘的契机).
+                // 输入框与按钮等子级在主传递阶段先于本层收到事件, 不受影响;
+                // 顶栏返回按钮在 Scaffold topBar 内, 不在本层覆盖范围, 保持可用.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false).consume()
+                        waitForUpOrCancellation()?.consume()
+                    }
+                }
                 .shake(shake),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
+            // 步骤进度点: 位置/颜色弹簧过渡, 一眼看清向导走到哪
+            StepDots(step = step, total = 4)
+            Spacer(Modifier.height(28.dp))
+
             // 向导步骤: 方向感知滑动过渡 (0选类型→1输入→2再输入→3恢复密钥), 不再硬切
             AnimatedStep(targetState = step, direction = stepDirection) { s ->
                 when (s) {
@@ -152,11 +183,13 @@ fun PasswordSetupScreen(
                         second = value
                         if (second == first) {
                             if (isChangePassword) {
-                                // 修改密码: 只更新密码哈希, 恢复密钥保持不变 (ChangePasswordDialog 语义).
+                                // 修改密码: 只更新密码哈希与类型, 恢复密钥保持不变 (ChangePasswordDialog 语义).
                                 // 不生成新密钥, 不展示恢复密钥.
                                 val salt = PasswordCrypto.newSalt()
                                 val encodedPassword = PasswordCrypto.encode(first, salt)
                                 scope.launch {
+                                    // 类型必须显式持久化: 允许 PIN ⇄ 扩展密码跨类型修改.
+                                    repo.setPasswordType(passwordType)
                                     repo.setPassword(encodedPassword)
                                     repo.setPasswordEnabled(true)
                                 }
@@ -209,7 +242,11 @@ fun PasswordSetupScreen(
 
 @Composable
 private fun TypeSelect(onPickPin: () -> Unit, onPickMixed: () -> Unit) {
-    Text(stringResource(R.string.password_type_title), style = MaterialTheme.typography.titleMedium)
+    Text(
+        stringResource(R.string.password_type_title),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+    )
     Spacer(Modifier.height(8.dp))
     Text(
         stringResource(R.string.password_type_subtitle),
@@ -217,16 +254,106 @@ private fun TypeSelect(onPickPin: () -> Unit, onPickMixed: () -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
     )
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    Spacer(Modifier.height(28.dp))
+    // 卡片式类型选择: 图标圆底色块 + 标题, 品牌双色区分, 按压有反馈
+    TypeSelectCard(
+        icon = Icons.Filled.Dialpad,
+        title = stringResource(R.string.password_type_pin),
+        iconContainer = MaterialTheme.colorScheme.primaryContainer,
+        iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+        onClick = onPickPin,
+    )
+    Spacer(Modifier.height(14.dp))
+    TypeSelectCard(
+        icon = Icons.Filled.Keyboard,
+        title = stringResource(R.string.password_type_mixed),
+        iconContainer = MaterialTheme.colorScheme.secondaryContainer,
+        iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+        onClick = onPickMixed,
+    )
+}
+
+@Composable
+private fun TypeSelectCard(
+    icon: ImageVector,
+    title: String,
+    iconContainer: Color,
+    iconTint: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .echoPressScale(0.97f)
+            .clickable(onClick = onClick),
     ) {
-        OutlinedButton(onClick = onPickPin, modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.password_type_pin))
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(iconContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(14.dp))
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.weight(1f))
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
         }
-        OutlinedButton(onClick = onPickMixed, modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.password_type_mixed))
+    }
+}
+
+/** 向导步骤进度点 (同引导页语言: 弹簧尺寸/颜色过渡). */
+@Composable
+private fun StepDots(step: Int, total: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        repeat(total) { i ->
+            val active = i == step
+            val size by animateDpAsState(
+                targetValue = if (active) 8.dp else 6.dp,
+                animationSpec = EchoMotion.fastSpatial(),
+                label = "setup_dot_size",
+            )
+            val color by animateColorAsState(
+                targetValue = if (active) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outlineVariant,
+                animationSpec = EchoMotion.fastEffects(),
+                label = "setup_dot_color",
+            )
+            Box(
+                modifier = Modifier
+                    .size(size)
+                    .background(color, CircleShape),
+            )
         }
+    }
+}
+
+/** 输入框延迟出现 (~1s): 给上一步的输入法收起/焦点切换留出完整窗口, 避免手快的用户在
+ *  输入框刚出现时就点击, 干扰输入法的自动弹出. 延迟期间显示加载指示. */
+@Composable
+private fun DelayedFieldReady(content: @Composable () -> Unit) {
+    var fieldReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(1000)
+        fieldReady = true
+    }
+    if (!fieldReady) {
+        LoadingPulse()
+    } else {
+        content()
     }
 }
 
@@ -237,25 +364,30 @@ private fun FirstEnter(
     errorMsg: Int?,
     onDone: (String) -> Unit,
 ) {
-    if (passwordType == "mixed") {
-        // 扩展密码: 输入 + 确认按钮.
-        var value by remember { mutableStateOf("") }
-        MixedPasswordInput(
-            value = value,
-            onValueChange = { value = it },
-            label = stringResource(R.string.mixed_input_hint),
-            onImeAction = { onDone(value) },
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { onDone(value) }) { Text(stringResource(R.string.confirm)) }
-        if (error) {
-            Text(
-                stringResource(errorMsg ?: R.string.mixed_too_short),
-                color = MaterialTheme.colorScheme.error,
+    DelayedFieldReady {
+        if (passwordType == "mixed") {
+            // 扩展密码: 输入 + 确认按钮.
+            var value by remember { mutableStateOf("") }
+            MixedPasswordInput(
+                value = value,
+                onValueChange = { value = it },
+                label = stringResource(R.string.mixed_input_hint),
+                onImeAction = { onDone(value) },
             )
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = { onDone(value) },
+                modifier = Modifier.fillMaxWidth().echoPressScale(0.97f),
+            ) { Text(stringResource(R.string.confirm)) }
+            if (error) {
+                Text(
+                    stringResource(errorMsg ?: R.string.mixed_too_short),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        } else {
+            PinInput(onComplete = onDone)
         }
-    } else {
-        PinInput(onComplete = onDone)
     }
 }
 
@@ -266,40 +398,45 @@ private fun SecondEnter(
     errorMsg: Int?,
     onConfirm: (String) -> Unit,
 ) {
-    if (passwordType == "mixed") {
-        // 扩展密码: 输入 + 确认按钮.
-        var value by remember { mutableStateOf("") }
-        MixedPasswordInput(
-            value = value,
-            onValueChange = { value = it },
-            label = stringResource(R.string.mixed_confirm_hint),
-            onImeAction = { onConfirm(value) },
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { onConfirm(value) }) { Text(stringResource(R.string.confirm)) }
-        if (error) {
-            Text(
-                stringResource(errorMsg ?: R.string.mixed_not_match),
-                color = MaterialTheme.colorScheme.error,
+    DelayedFieldReady {
+        if (passwordType == "mixed") {
+            // 扩展密码: 输入 + 确认按钮.
+            var value by remember { mutableStateOf("") }
+            MixedPasswordInput(
+                value = value,
+                onValueChange = { value = it },
+                label = stringResource(R.string.mixed_confirm_hint),
+                onImeAction = { onConfirm(value) },
             )
-        }
-    } else {
-        // PIN: 输满 6 位自动进入下一步.
-        var value by remember { mutableStateOf("") }
-        PasswordInputField(
-            value = value,
-            onValueChange = {
-                value = it.filter { c -> c.isDigit() }.take(6)
-                if (value.length == 6) onConfirm(value)
-            },
-            label = stringResource(R.string.pin_confirm_hint),
-            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-        )
-        if (error) {
-            Text(
-                stringResource(errorMsg ?: R.string.pin_not_match),
-                color = MaterialTheme.colorScheme.error,
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = { onConfirm(value) },
+                modifier = Modifier.fillMaxWidth().echoPressScale(0.97f),
+            ) { Text(stringResource(R.string.confirm)) }
+            if (error) {
+                Text(
+                    stringResource(errorMsg ?: R.string.mixed_not_match),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        } else {
+            // PIN: 输满 6 位自动进入下一步.
+            var value by remember { mutableStateOf("") }
+            PasswordInputField(
+                value = value,
+                onValueChange = {
+                    value = it.filter { c -> c.isDigit() }.take(6)
+                    if (value.length == 6) onConfirm(value)
+                },
+                label = stringResource(R.string.pin_confirm_hint),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
             )
+            if (error) {
+                Text(
+                    stringResource(errorMsg ?: R.string.pin_not_match),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -318,7 +455,10 @@ private fun RecoveryKeyShow(key: String, onFinish: () -> Unit) {
     // 密钥卡片: 4 位分组 + 等宽数字 + 可复制 (修复原 24sp 格式串一行放不下被裁的问题)
     RecoveryKeyCard(key = key)
     Spacer(Modifier.height(24.dp))
-    Button(onClick = onFinish, modifier = Modifier.fillMaxWidth()) {
+    Button(
+        onClick = onFinish,
+        modifier = Modifier.fillMaxWidth().echoPressScale(0.97f),
+    ) {
         Text(stringResource(R.string.confirm))
     }
 }

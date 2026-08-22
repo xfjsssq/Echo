@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -26,6 +25,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -56,7 +56,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -70,7 +69,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -86,6 +84,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,7 +98,6 @@ import com.echo.recorder.ui.common.LoadingPulse
 import com.echo.recorder.ui.common.echoPressScale
 import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.fmtTime
-import com.echo.recorder.ui.formatElapsed
 import com.echo.recorder.ui.lock.PasswordPromptDialog
 import com.echo.recorder.ui.theme.EchoMotion
 import kotlinx.coroutines.delay
@@ -154,33 +152,6 @@ fun RecordScreen(
     var verifyDelete by remember { mutableStateOf(false) }
     val haptics = rememberEchoHaptics()
 
-    // ── 录音时长 (跨暂停续录累计; 保存或删除当前段后归零重计; 回到 IDLE 清零) ──
-    var recordingElapsedMs by remember { mutableLongStateOf(0L) }
-    // 段结束标志: 点保存/删除时置位, 等 phase 真正回到 BUFFERING 才归零
-    // (避免 REVIEW 页"已录制"时长在切换动画期间闪成 00:00)
-    var pendingSegmentReset by remember { mutableStateOf(false) }
-    fun markSegmentDiscarded() {
-        pendingSegmentReset = true
-    }
-
-    LaunchedEffect(state.phase) {
-        if (state.phase == RecordingService.Phase.BUFFERING) {
-            val startAt = if (pendingSegmentReset) {
-                pendingSegmentReset = false
-                System.currentTimeMillis() // 段已保存/删除, 从零起算
-            } else {
-                System.currentTimeMillis() - recordingElapsedMs
-            }
-            while (true) {
-                recordingElapsedMs = System.currentTimeMillis() - startAt
-                delay(250)
-            }
-        } else if (state.phase == RecordingService.Phase.IDLE) {
-            recordingElapsedMs = 0L
-            pendingSegmentReset = false
-        }
-    }
-
     // ── 动画状态 ──
     var animPhase by remember { mutableStateOf(AnimPhase.IDLE) }
     val dropProgress = remember { Animatable(0f) } // 0→1 下落进度
@@ -231,18 +202,13 @@ fun RecordScreen(
                 recoveryHash = null,
                 onVerify = {
                     verifyDelete = false
-                    markSegmentDiscarded() // 段被丢弃, 回 BUFFERING 后计时归零
                     viewModel.onDeletePressed()
                 },
                 onDismiss = { verifyDelete = false },
             )
         } else {
             LaunchedEffect(verifyDelete) {
-                if (verifyDelete) {
-                    markSegmentDiscarded()
-                    viewModel.onDeletePressed()
-                    verifyDelete = false
-                }
+                if (verifyDelete) { viewModel.onDeletePressed(); verifyDelete = false }
             }
         }
     }
@@ -280,15 +246,6 @@ fun RecordScreen(
     val glowColor = if (isDark) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.primaryContainer
 
-    // ── 缓慢流光: 一束极淡暖光在页面上部往返游移 (相位经 sin 映射, 循环接缝无跳变) ──
-    val lightDrift = rememberInfiniteTransition(label = "light_drift")
-    val lightPhase by lightDrift.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(16000, easing = LinearEasing)),
-        label = "light_phase",
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -306,22 +263,12 @@ fun RecordScreen(
                         MaterialTheme.colorScheme.surface,
                     ),
                 ),
-            )
-            .drawBehind {
-                val cx = size.width * (0.5f + 0.42f * sin(lightPhase * 2f * PI.toFloat()))
-                val radius = size.width * 0.70f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(glowColor.copy(alpha = 0.05f), Color.Transparent),
-                        center = Offset(cx, size.height * 0.20f),
-                        radius = radius,
-                    ),
-                    radius = radius,
-                )
-            },
+            ),
     ) {
         Scaffold(
             containerColor = Color.Transparent,
+            // 清空内容区系统栏 inset: 音频光带要贴到屏幕物理底边 (TopAppBar 自带状态栏处理)
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopAppBar(
                     title = {
@@ -399,7 +346,6 @@ fun RecordScreen(
                             logoReturn = logoReturn.value,
                             screenWidthPx = screenWidthPx,
                             screenHeightPx = screenHeightPx,
-                            elapsedMs = recordingElapsedMs,
                             onPause = remember(haptics, viewModel) {
                                 {
                                     haptics.confirm()
@@ -410,10 +356,8 @@ fun RecordScreen(
                         )
                         RecordingService.Phase.REVIEW -> ReviewContent(
                             darkTheme = isDark,
-                            recordedMs = recordingElapsedMs,
                             onSave = {
                                 haptics.confirm()
-                                markSegmentDiscarded() // 段已保存, 回 BUFFERING 后新段从零计时
                                 viewModel.onSavePressed()
                             },
                             onDelete = {
@@ -426,7 +370,8 @@ fun RecordScreen(
 
                 ExitButton(
                     onExit = onExit,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                    // inset 已清零 (光带贴底), 底部垫高避让系统手势区
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 28.dp),
                 )
             }
         }
@@ -578,7 +523,6 @@ private fun BufferingContent(
     logoReturn: Float,
     screenWidthPx: Float,
     screenHeightPx: Float,
-    elapsedMs: Long,
     onPause: () -> Unit,
     saving: Boolean,
 ) {
@@ -598,31 +542,13 @@ private fun BufferingContent(
                 )
             }
         } else {
-            // ── 录音时长: 顶部大号等宽数字, 随频谱一起浮现 ──
-            if (animPhase == AnimPhase.VISUALIZER) {
-                Text(
-                    formatElapsed(elapsedMs),
-                    style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 20.dp)
-                        .graphicsLayer {
-                            alpha = waveReveal.coerceIn(0f, 1f)
-                            translationY = (1f - waveReveal.coerceIn(0f, 1f)) * 12.dp.toPx()
-                        },
-                )
-            }
-
-            // ── 流体能量区域 (Logo 消失后才出现, 占 38%底部, 光从 logo 消失处晕开) ──
+            // ── 音频能量光带 (Logo 消失后自底部涌起, 曲面闭合到屏幕物理底边) ──
             if (animPhase == AnimPhase.VISUALIZER) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(0.38f)
+                        .fillMaxHeight(0.30f)
                         .align(Alignment.BottomCenter)
-                        // 只做 alpha 淡入 — 扩散由 blob 自身的半径增长完成,
-                        // 不再对矩形容器做 scaleX 展开 (那是"矩形摊开"的元凶).
                         .graphicsLayer {
                             alpha = waveReveal
                         },
@@ -899,7 +825,7 @@ private fun ReturningLogo(
 // ═══════════════════════════════════════════════════════════
 
 @Composable
-private fun ReviewContent(darkTheme: Boolean, recordedMs: Long, onSave: () -> Unit, onDelete: () -> Unit) {
+private fun ReviewContent(darkTheme: Boolean, onSave: () -> Unit, onDelete: () -> Unit) {
     // 删除键: 淡粉色调 (用户要求"淡一点, 粉红一点"), 暗黑主题下用更亮的粉色
     val deleteColor = if (darkTheme) Color(0xFFE85D7F) else Color(0xFFF48FB1)
     val deleteGlow = if (darkTheme) Color(0xFFFF7A9C) else Color(0xFFFFB3C6)
@@ -921,15 +847,10 @@ private fun ReviewContent(darkTheme: Boolean, recordedMs: Long, onSave: () -> Un
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            stringResource(R.string.recorded_duration, formatElapsed(recordedMs)),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 14.sp,
-            modifier = Modifier.padding(bottom = 6.dp),
-        )
-        Text(
             stringResource(R.string.review_title),
             fontWeight = FontWeight.SemiBold,
             fontSize = 18.sp,
+            textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 48.dp),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
