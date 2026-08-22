@@ -216,7 +216,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                 TabRow(
                     selectedTabIndex = state.tab.ordinal,
                     indicator = { tabPositions ->
-                        // 弹簧渐变胶囊: 黄→蓝品牌渐变, 位置/宽度弹性跟随 (轻微过冲)
+                        // 弹簧渐变胶囊: 黄→蓝品牌渐变, 贴 TabRow 底边 (不遮文字), 位置/宽度弹性跟随
                         if (state.tab.ordinal < tabPositions.size) {
                             val pos = tabPositions[state.tab.ordinal]
                             val left by animateDpAsState(
@@ -230,19 +230,24 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                                 label = "tab_width",
                             )
                             Box(
-                                Modifier
-                                    .offset(x = left)
-                                    .size(width = width, height = 3.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            listOf(
-                                                MaterialTheme.colorScheme.primary,
-                                                MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.BottomStart,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .offset(x = left)
+                                        .size(width = width, height = 3.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(
+                                                    MaterialTheme.colorScheme.primary,
+                                                    MaterialTheme.colorScheme.secondary,
+                                                ),
                                             ),
                                         ),
-                                    ),
-                            )
+                                )
+                            }
                         }
                     },
                 ) {
@@ -298,7 +303,7 @@ fun ListScreen(viewModel: ListViewModel, onOpenPublicDir: () -> Unit = {}) {
                     modifier = Modifier.animatedListEntrance(index = 0, withBlur = false),
                 )
             } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), state = listState) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                 // 临时录音提示条: 提醒 24h 自动删除
                 if (state.tab == ListTab.TEMPORARY) {
                     item(key = "temp_expiry_hint") {

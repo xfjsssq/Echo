@@ -37,7 +37,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
@@ -55,11 +54,13 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,9 +94,9 @@ import com.echo.recorder.R
 import com.echo.recorder.service.AudioAmplitudeMonitor
 import com.echo.recorder.service.RecordingService
 import com.echo.recorder.settings.SettingsRepository
-import com.echo.recorder.ui.common.FeatheredOrbIcon
 import com.echo.recorder.ui.common.FeatheredPillButton
 import com.echo.recorder.ui.common.LoadingPulse
+import com.echo.recorder.ui.common.echoPressScale
 import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.fmtTime
 import com.echo.recorder.ui.formatElapsed
@@ -139,8 +140,6 @@ fun RecordScreen(
     onOpenList: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onExit: () -> Unit = {},
-    onLock: () -> Unit = {},
-    passwordEnabled: Boolean = false,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val amplitude by AudioAmplitudeMonitor.amplitude.collectAsStateWithLifecycle()
@@ -155,18 +154,30 @@ fun RecordScreen(
     var verifyDelete by remember { mutableStateOf(false) }
     val haptics = rememberEchoHaptics()
 
-    // ── 录音时长 (跨暂停/保存续录累计; 回到 IDLE 清零) ──
+    // ── 录音时长 (跨暂停续录累计; 保存或删除当前段后归零重计; 回到 IDLE 清零) ──
     var recordingElapsedMs by remember { mutableLongStateOf(0L) }
+    // 段结束标志: 点保存/删除时置位, 等 phase 真正回到 BUFFERING 才归零
+    // (避免 REVIEW 页"已录制"时长在切换动画期间闪成 00:00)
+    var pendingSegmentReset by remember { mutableStateOf(false) }
+    fun markSegmentDiscarded() {
+        pendingSegmentReset = true
+    }
 
     LaunchedEffect(state.phase) {
         if (state.phase == RecordingService.Phase.BUFFERING) {
-            val startAt = System.currentTimeMillis() - recordingElapsedMs
+            val startAt = if (pendingSegmentReset) {
+                pendingSegmentReset = false
+                System.currentTimeMillis() // 段已保存/删除, 从零起算
+            } else {
+                System.currentTimeMillis() - recordingElapsedMs
+            }
             while (true) {
                 recordingElapsedMs = System.currentTimeMillis() - startAt
                 delay(250)
             }
         } else if (state.phase == RecordingService.Phase.IDLE) {
             recordingElapsedMs = 0L
+            pendingSegmentReset = false
         }
     }
 
@@ -220,13 +231,18 @@ fun RecordScreen(
                 recoveryHash = null,
                 onVerify = {
                     verifyDelete = false
+                    markSegmentDiscarded() // 段被丢弃, 回 BUFFERING 后计时归零
                     viewModel.onDeletePressed()
                 },
                 onDismiss = { verifyDelete = false },
             )
         } else {
             LaunchedEffect(verifyDelete) {
-                if (verifyDelete) { viewModel.onDeletePressed(); verifyDelete = false }
+                if (verifyDelete) {
+                    markSegmentDiscarded()
+                    viewModel.onDeletePressed()
+                    verifyDelete = false
+                }
             }
         }
     }
@@ -316,39 +332,30 @@ fun RecordScreen(
                         )
                     },
                     actions = {
-                        // 幽灵球钮: 三色低饱和光球, 与录音页"发光物体"语言一致
-                        if (passwordEnabled) {
-                            FeatheredOrbIcon(
-                                icon = Icons.Filled.Lock,
-                                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
-                                glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.30f),
-                                iconTint = MaterialTheme.colorScheme.secondary,
-                                contentDescription = stringResource(R.string.lock),
-                                onClick = onLock,
-                                buttonSize = 40.dp,
-                                iconSize = 19.dp,
+                        // 列表入口 (主操作, 品牌色大图标) + 设置 — 大触区 + 按压缩放
+                        // (锁屏按钮已移除: 切后台/冷启动会自动上锁, 无需手动入口)
+                        IconButton(
+                            onClick = onOpenList,
+                            modifier = Modifier.size(46.dp).echoPressScale(0.88f),
+                        ) {
+                            Icon(
+                                Icons.Filled.List,
+                                contentDescription = stringResource(R.string.record_list),
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(26.dp),
                             )
                         }
-                        FeatheredOrbIcon(
-                            icon = Icons.Filled.List,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                            glowColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
-                            iconTint = MaterialTheme.colorScheme.primary,
-                            contentDescription = stringResource(R.string.record_list),
-                            onClick = onOpenList,
-                            buttonSize = 40.dp,
-                            iconSize = 19.dp,
-                        )
-                        FeatheredOrbIcon(
-                            icon = Icons.Filled.Settings,
-                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
-                            glowColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.30f),
-                            iconTint = MaterialTheme.colorScheme.tertiary,
-                            contentDescription = stringResource(R.string.settings),
+                        IconButton(
                             onClick = onOpenSettings,
-                            buttonSize = 40.dp,
-                            iconSize = 19.dp,
-                        )
+                            modifier = Modifier.size(46.dp).echoPressScale(0.88f),
+                        ) {
+                            Icon(
+                                Icons.Filled.Settings,
+                                contentDescription = stringResource(R.string.settings),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
@@ -393,9 +400,11 @@ fun RecordScreen(
                             screenWidthPx = screenWidthPx,
                             screenHeightPx = screenHeightPx,
                             elapsedMs = recordingElapsedMs,
-                            onPause = {
-                                haptics.confirm()
-                                viewModel.onPausePressed()
+                            onPause = remember(haptics, viewModel) {
+                                {
+                                    haptics.confirm()
+                                    viewModel.onPausePressed()
+                                }
                             },
                             saving = state.saving,
                         )
@@ -404,6 +413,7 @@ fun RecordScreen(
                             recordedMs = recordingElapsedMs,
                             onSave = {
                                 haptics.confirm()
+                                markSegmentDiscarded() // 段已保存, 回 BUFFERING 后新段从零计时
                                 viewModel.onSavePressed()
                             },
                             onDelete = {
@@ -627,10 +637,12 @@ private fun BufferingContent(
                 }
 
                 // ── Logo 即暂停键: 音频条彻底出现后从左边屏幕外飞回中心, 点击暂停 ──
+                // 振幅经 State 传入: 绘制阶段直读, 不触发本组件 83Hz 重组 (掉帧根因)
+                val ampState = rememberUpdatedState(amplitude)
                 ReturningLogo(
                     progress = logoReturn,
                     screenWidthPx = screenWidthPx,
-                    amplitude = amplitude,
+                    ampState = ampState,
                     onClick = onPause,
                 )
             }
@@ -782,11 +794,10 @@ private fun FallingLogo(progress: Float, screenHeightPx: Float) {
 private fun ReturningLogo(
     progress: Float,
     screenWidthPx: Float,
-    amplitude: Float,
+    ampState: State<Float>,
     onClick: () -> Unit,
 ) {
     val p = progress.coerceIn(0f, 1f)
-    val amp = amplitude.coerceIn(0f, 1f)
 
     // 按压果冻感: 按下快速收缩, 松手弹性回弹
     val interaction = remember { MutableInteractionSource() }
@@ -822,6 +833,12 @@ private fun ReturningLogo(
     // 前 1/3 淡入 (滑入时避免生硬弹现)
     val fadeAlpha = (p * 3f).coerceAtMost(1f)
 
+    // 光晕笔刷只创建一次; 强度在绘制层随振幅调制 → 不产生每帧分配
+    val haloColor = MaterialTheme.colorScheme.primary
+    val haloBrush = remember(haloColor) {
+        Brush.radialGradient(listOf(haloColor, Color.Transparent))
+    }
+
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
@@ -832,6 +849,15 @@ private fun ReturningLogo(
                     scaleY = deformY * floatScale * pressScale
                     alpha = fadeAlpha
                 }
+                // 光晕: 绘制阶段读振幅 (仅失效重绘, 不重组) — 它也是一枚随声音呼吸的能量球
+                .drawBehind {
+                    drawCircle(
+                        brush = haloBrush,
+                        radius = size.minDimension * 0.62f,
+                        center = center,
+                        alpha = 0.20f + 0.14f * ampState.value,
+                    )
+                }
                 .clip(CircleShape)
                 .clickable(
                     interactionSource = interaction,
@@ -840,21 +866,6 @@ private fun ReturningLogo(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            // 光晕 (同开始键) — 强度随声音呼吸: 录音时它也是一枚"能量球"
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f + 0.12f * amp),
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.05f + 0.05f * amp),
-                                Color.Transparent,
-                            ),
-                        ),
-                        CircleShape,
-                    ),
-            )
             // Logo 本体: 径向羽化遮罩 → 边缘融化进背景 (发光球体质感, 无硬边)
             Image(
                 painter = painterResource(R.drawable.ic_echo_logo),

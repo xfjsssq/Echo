@@ -10,19 +10,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.ui.theme.EchoTheme
-import com.echo.recorder.ui.theme.ThemeManager
-import com.echo.recorder.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -86,19 +81,8 @@ class MainActivity : ComponentActivity() {
         ) == PackageManager.PERMISSION_GRANTED
 
         setContent {
-            val context = LocalContext.current
-            val settings = remember { SettingsRepository(context) }
-
-            // 响应式观察 themeMode: DataStore 变化时自动重组, 无需 runBlocking.
-            val themeMode by settings.themeMode.collectAsStateWithLifecycle(
-                initialValue = ThemeMode.LIGHT,
-            )
-            val darkTheme = ThemeManager.resolveDarkTheme(
-                themeMode,
-                ThemeManager.isSystemDark(context),
-            )
-
-            EchoTheme(darkTheme = darkTheme) {
+            // 恒为明亮主题 (暗黑模式已移除)
+            EchoTheme {
                 EchoApp(
                     hasPermission = hasPermission,
                     onRequestPermission = { requestMicPermission() },

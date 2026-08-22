@@ -1,9 +1,7 @@
 package com.echo.recorder.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -13,8 +11,8 @@ import androidx.compose.ui.unit.sp
 /*
  * Echo 主题配色 —— 呼应应用图标 (白色三花猫 + 暖橙斑 0xFFB366 + 亮蓝声波 0xFF4D8CFF).
  *
- * 明亮模式: 主色采用类似猫咪暖橙斑的 Mandarin 橙, 强调色使用亮蓝声波色.
- * 深色模式: 更柔和的 Amber/Mandarin 与 Sky 蓝.
+ * 恒为明亮模式: 主色采用类似猫咪暖橙斑的 Mandarin 橙, 强调色使用亮蓝声波色.
+ * (暗黑模式已移除)
  */
 
 // 暖橙 (猫咪斑纹) —— 主色
@@ -41,17 +39,6 @@ private val SurfaceContainerHighLight = Color(0xFFFDE8CE)
 private val SurfaceContainerHighestLight = Color(0xFFFBE0BC)
 private val OnSurfaceLight = Color(0xFF201B12)
 private val OutLineLight = Color(0xFF7D7570)
-
-// 中性色组 (深色) — 细分 surface 容器层级: 与背景同色相暖棕, 极小明度阶梯 (每级约 +3~5),
-// 卡片微微上浮而不出现"贴上去的色块"; 避免冷灰与暖背景撞色
-private val Neutral90 = Color(0xFFEFE0CF)
-private val SurfaceDark = Color(0xFF16120A)
-private val SurfaceContainerLowestDark = Color(0xFF100C05)
-private val SurfaceContainerLowDark = Color(0xFF1A150D)
-private val SurfaceContainerDark = Color(0xFF1F1910)
-private val SurfaceContainerHighDark = Color(0xFF241D13)
-private val SurfaceContainerHighestDark = Color(0xFF2A2216)
-private val OnSurfaceDark = Color(0xFFEFE0CF)
 
 private val ErrorColor = Color(0xFFB3261E)
 
@@ -90,46 +77,6 @@ private val LightColors = lightColorScheme(
     onErrorContainer = Color(0xFF410002),
     outline = OutLineLight,
     outlineVariant = Color(0xFFD0C4B3),
-    scrim = Color(0xFF000000),
-)
-
-// 深色配色方案
-private val DarkColors = darkColorScheme(
-    primary = Mandarin80,
-    onPrimary = Color(0xFF4B3100),
-    primaryContainer = Mandarin40,
-    onPrimaryContainer = Mandarin90,
-    inversePrimary = Mandarin40,
-    secondary = Sky80,
-    onSecondary = Color(0xFF003564),
-    // 柔化冷蓝容器: 原值 0xFF004D96 过饱和, 与暖棕背景冷热对撞突兀;
-    // 改为低饱和、略带暖灰倾向的深蓝, 既保留"声波蓝"语义又不割裂
-    secondaryContainer = Color(0xFF23436A),
-    onSecondaryContainer = Sky90,
-    tertiary = Color(0xFFFFB68D),
-    onTertiary = Color(0xFF552E1D),
-    tertiaryContainer = Color(0xFF68441F),
-    onTertiaryContainer = Color(0xFFFFDBC9),
-    background = SurfaceDark,
-    onBackground = OnSurfaceDark,
-    surface = SurfaceDark,
-    onSurface = OnSurfaceDark,
-    surfaceVariant = SurfaceContainerDark,
-    onSurfaceVariant = Color(0xFFD3C5B6),
-    surfaceTint = Mandarin80,
-    surfaceContainerLowest = SurfaceContainerLowestDark,
-    surfaceContainerLow = SurfaceContainerLowDark,
-    surfaceContainer = SurfaceContainerDark,
-    surfaceContainerHigh = SurfaceContainerHighDark,
-    surfaceContainerHighest = SurfaceContainerHighestDark,
-    inverseSurface = Neutral90,
-    inverseOnSurface = Neutral10,
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    outline = Color(0xFF978D82),
-    outlineVariant = Color(0xFF4B453E),
     scrim = Color(0xFF000000),
 )
 
@@ -174,14 +121,11 @@ private val AppTypography = Typography(
 
 @Composable
 fun EchoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    // 主题切换交叉淡化: 捕获旧 scheme 逐色过渡, 而非瞬间全屏变色
-    val targetScheme = if (darkTheme) DarkColors else LightColors
-    val animatedScheme = animatedColorScheme(targetScheme)
+    // 恒为明亮主题 (暗黑模式已按用户要求移除 — 双套容器色适配成本高, 亮色打磨到极致)
     MaterialTheme(
-        colorScheme = animatedScheme,
+        colorScheme = LightColors,
         typography = AppTypography,
         content = content,
     )

@@ -22,7 +22,6 @@ import com.echo.recorder.ui.lock.PasswordSetupScreen
 import com.echo.recorder.ui.onboarding.OnboardingScreen
 import com.echo.recorder.ui.settings.SettingsScreen
 import com.echo.recorder.ui.theme.EchoMotion
-import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.record.RecordScreen
 import com.echo.recorder.ui.record.RecordViewModel
 
@@ -41,10 +40,6 @@ fun EchoNavHost(
     onRequestPermission: () -> Unit,
     onRestartService: (savePending: Boolean) -> Unit,
     onRequestExit: () -> Unit,
-    onLock: () -> Unit = {},
-    passwordEnabled: Boolean = false,
-    themeMode: ThemeMode = ThemeMode.LIGHT,
-    onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     val context = LocalContext.current
     val listViewModel = remember { ListViewModel(context) }
@@ -91,8 +86,6 @@ fun EchoNavHost(
                 onOpenList = { navController.navigate(EchoRoutes.LIST) },
                 onOpenSettings = { navController.navigate(EchoRoutes.SETTINGS) },
                 onExit = onRequestExit,
-                onLock = onLock,
-                passwordEnabled = passwordEnabled,
             )
         }
         composable(EchoRoutes.LIST) {
@@ -110,16 +103,11 @@ fun EchoNavHost(
                 onChangePassword = { navController.navigate(EchoRoutes.passwordSetupRoute(true)) },
                 // 设置页"如何使用小E" → 重新弹出引导卡片
                 onOpenOnboarding = { navController.navigate(EchoRoutes.ONBOARDING) },
-                themeMode = themeMode,
-                onThemeChange = onThemeChange,
             )
         }
         composable(EchoRoutes.ONBOARDING) {
             OnboardingScreen(
                 onFinish = { navController.popBackStack() },
-                // 从设置页进入的引导同样支持主题切换 (选完即关闭引导)
-                themeMode = themeMode,
-                onThemeChange = onThemeChange,
             )
         }
         composable(

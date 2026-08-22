@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 暗色模式窗口背景: 暖棕深底, 与 SurfaceDark (#16120A) 一致. -->
-    <style name="Theme.Echo" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@color/echo_window_bg</item>
-    </style>
-</resources>

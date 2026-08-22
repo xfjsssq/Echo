@@ -53,7 +53,6 @@ import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.ui.common.animatedListEntrance
 import com.echo.recorder.ui.common.echoPressScale
 import com.echo.recorder.ui.common.rememberEchoHaptics
-import com.echo.recorder.ui.theme.ThemeMode
 import com.echo.recorder.ui.lock.PasswordPromptDialog
 import com.echo.recorder.ui.lock.ChangePasswordDialog
 import com.echo.recorder.ui.lock.ResetRecoveryKeyDialog
@@ -74,8 +73,6 @@ fun SettingsScreen(
     onOpenPublicDir: () -> Unit = {},
     onChangePassword: () -> Unit = {},
     onOpenOnboarding: () -> Unit = {},
-    themeMode: ThemeMode = ThemeMode.LIGHT,
-    onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     val context = LocalContext.current
     val repo = remember { SettingsRepository(context) }
@@ -97,8 +94,7 @@ fun SettingsScreen(
     var pendingSelected by remember { mutableStateOf<BufferDuration?>(null) }
     val displaySelected = pendingSelected ?: selected
 
-    // 主题/语言选择弹窗.
-    var showThemeDialog by remember { mutableStateOf(false) }
+    // 主题/语言选择弹窗 (主题已移除).
     var showLanguageDialog by remember { mutableStateOf(false) }
     // 修改密码 / 查看恢复密钥 / 重置恢复密钥 / 关闭密码验证.
     var showChangePassword by remember { mutableStateOf(false) }
@@ -163,49 +159,7 @@ fun SettingsScreen(
         )
     }
 
-    // 主题选择.
-    if (showThemeDialog) {
-        AlertDialog(
-            onDismissRequest = { showThemeDialog = false },
-            title = { Text(stringResource(R.string.theme)) },
-            text = {
-                Column(Modifier.selectableGroup()) {
-                    ThemeMode.values().forEach { mode ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .selectable(
-                                    selected = themeMode == mode,
-                                    onClick = {
-                                        showThemeDialog = false
-                                        // 主题切换: 仅更新 Compose 状态 + 持久化, 不重建 Activity.
-                                        onThemeChange(mode)
-                                    },
-                                    role = Role.RadioButton,
-                                )
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = themeMode == mode, onClick = null)
-                            Text(
-                                text = stringResource(
-                                    when (mode) {
-                                        ThemeMode.LIGHT -> R.string.theme_light
-                                        ThemeMode.DARK -> R.string.theme_dark
-                                    }
-                                ),
-                                modifier = Modifier.padding(start = 12.dp),
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showThemeDialog = false }) { Text(stringResource(R.string.close)) }
-            },
-        )
-    }
+    // 主题选择已随暗黑主题移除 (应用恒为明亮主题).
 
     // 语言选择.
     if (showLanguageDialog) {
@@ -390,16 +344,6 @@ fun SettingsScreen(
             // ---- 外观与语言 ----
             GroupTitle(stringResource(R.string.group_appearance))
             SettingsCard(index = 3) {
-                Preference(
-                    title = stringResource(R.string.theme),
-                    subtitle = stringResource(
-                        when (themeMode) {
-                            ThemeMode.LIGHT -> R.string.theme_light
-                            ThemeMode.DARK -> R.string.theme_dark
-                        }
-                    ),
-                ) { showThemeDialog = true }
-                Divider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
                 Preference(
                     title = stringResource(R.string.language),
                     subtitle = stringResource(if (LocaleManager.current(language) == "en") R.string.language_en else R.string.language_zh),

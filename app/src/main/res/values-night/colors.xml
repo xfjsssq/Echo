@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 暗色模式覆盖: 窗口背景 = SurfaceDark. -->
-    <color name="echo_window_bg">#16120A</color>
-</resources>

@@ -71,12 +71,10 @@ import com.echo.recorder.ui.common.rememberEchoHaptics
 import com.echo.recorder.ui.theme.EchoMotion
 import com.echo.recorder.ui.theme.ThemeMode
 
-/** 引导卡片类型. */
+/** 引导卡片类型. (主题选择卡片已随暗黑主题移除 — 应用恒为明亮主题) */
 private enum class OnboardingCardType {
     /** 普通卡片: 标题 + 文本 + 下一步/完成按钮. */
     PLAIN,
-    /** 主题选择卡片: 三个单选选项. */
-    THEME,
 }
 
 private data class OnboardingCard(
@@ -93,13 +91,11 @@ private val CARDS = listOf(
     // 公共目录备份: 永远默认开启, 卡片仅告知功能, 不提供开关/按钮, 不显示路径.
     OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding4_title, R.string.onboarding4_text),
     OnboardingCard(OnboardingCardType.PLAIN, R.string.onboarding5_title, R.string.onboarding5_text),
-    OnboardingCard(OnboardingCardType.THEME, R.string.onboarding6_title, R.string.onboarding6_text),
 )
 
 /** 卡片类型 → 展示图标. */
 private fun cardIcon(type: OnboardingCardType): ImageVector = when (type) {
     OnboardingCardType.PLAIN -> Icons.Filled.Mic
-    OnboardingCardType.THEME -> Icons.Filled.Palette
 }
 
 /**
@@ -111,8 +107,6 @@ private fun cardIcon(type: OnboardingCardType): ImageVector = when (type) {
 @Composable
 fun OnboardingScreen(
     onFinish: () -> Unit,
-    themeMode: ThemeMode = ThemeMode.LIGHT,
-    onThemeChange: (ThemeMode) -> Unit = {},
 ) {
     var index by remember { mutableIntStateOf(0) }
     val haptics = rememberEchoHaptics()
@@ -257,18 +251,9 @@ fun OnboardingScreen(
                     }
 
                     // 内容区.
-                    when (card.type) {
-                        OnboardingCardType.THEME -> ThemeCardContent(
-                            titleRes = card.titleRes,
-                            textRes = card.textRes,
-                            selected = themeMode,
-                            onSelect = onThemeChange,
-                            onFinish = onFinish,
-                        )
-                        else -> PlainCardContent(
-                            card = card,
-                        )
-                    }
+                    PlainCardContent(
+                        card = card,
+                    )
                 }
 
                 // 底部导航: 上一步 / 下一步 / 完成 (带触感反馈).
@@ -337,59 +322,4 @@ private fun PlainCardContent(
         textAlign = TextAlign.Center,
         modifier = Modifier.padding(top = 12.dp),
     )
-}
-
-@Composable
-private fun ThemeCardContent(
-    titleRes: Int,
-    textRes: Int,
-    selected: ThemeMode,
-    onSelect: (ThemeMode) -> Unit,
-    onFinish: () -> Unit,
-) {
-    Text(
-        stringResource(titleRes),
-        style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.onSurface,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 24.dp),
-    )
-    Text(
-        stringResource(textRes),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 12.dp),
-    )
-    Column(modifier = Modifier.padding(top = 16.dp)) {
-        ThemeMode.values().forEach { mode ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectable(
-                        selected = selected == mode,
-                        onClick = {
-                            onSelect(mode)
-                            // 用户需求: 选完主题直接结束引导, 不用再点"开始使用"
-                            onFinish()
-                        },
-                        role = Role.RadioButton,
-                    )
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(selected = selected == mode, onClick = null)
-                Text(
-                    text = stringResource(
-                        when (mode) {
-                            ThemeMode.LIGHT -> R.string.theme_light
-                            ThemeMode.DARK -> R.string.theme_dark
-                        }
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = 12.dp),
-                )
-            }
-        }
-    }
 }

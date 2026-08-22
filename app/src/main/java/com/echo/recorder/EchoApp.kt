@@ -71,11 +71,6 @@ fun EchoApp(
         settings.passwordEnabled.collect { value = it }
     }
 
-    // 主题模式: 响应式观察 DataStore, 主题切换无需重建 Activity, 直接由 Compose 状态驱动.
-    val themeMode by produceState(initialValue = ThemeMode.LIGHT) {
-        settings.themeMode.collect { value = it }
-    }
-
     // 首次启动引导: 语言选择 -> 隐私协议 -> 引导卡片 -> 主界面.
     // 初始值 false, 等 DataStore 读到真实值后再决定是否跳过.
     val onboardingDone by produceState(initialValue = false) {
@@ -118,11 +113,6 @@ fun EchoApp(
                         scope.launch { settings.setOnboardingDone(true) }
                         step = 3
                     },
-                    // 主题切换: 仅更新 Compose 状态 + 持久化, 不重建 Activity, 不打断引导流程.
-                    // 注意: 这里不能再用 key(themeMode) 包裹 — 那会让整个引导组合被销毁重建,
-                    // 索引归零导致"选完主题重新开始引导".
-                    themeMode = themeMode,
-                    onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
                 )
             }
             3 -> {
@@ -261,11 +251,6 @@ fun EchoApp(
         else { viewModel.exitCompletely(); onExit() }
     }
 
-    // 用户点击锁定按钮: 触发锁屏.
-    val onLock: () -> Unit = {
-        SessionAuth.lock()
-    }
-
     // 应用外壳入场: 引导结束/冷启动进入主界面时整体淡入落位 (400ms, 一次性)
     EntranceAnimation(rise = 0.dp, scaleFrom = 0.985f) {
         EchoNavHost(
@@ -274,10 +259,6 @@ fun EchoApp(
             onRequestPermission = onRequestPermission,
             onRestartService = onRestartService,
             onRequestExit = onRequestExit,
-            onLock = onLock,
-            passwordEnabled = passwordEnabled,
-            themeMode = themeMode,
-            onThemeChange = { mode -> scope.launch { settings.setThemeMode(mode) } },
         )
     }
 }
