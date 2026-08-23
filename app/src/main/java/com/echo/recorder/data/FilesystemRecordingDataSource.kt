@@ -1,9 +1,8 @@
 package com.echo.recorder.data
 
 import android.content.Context
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
+import com.echo.recorder.common.computeAudioDurationMs
+import com.echo.recorder.common.concatenateAudioSegments
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.domain.model.RecordingCategory
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,7 +14,8 @@ import java.io.File
  * 本地文件系统录音数据源.
  *
  * 分类即目录: pending/ longterm/ unprocessed/ 各自对应一个 RecordingCategory.
- * _buffer/ 是实时环形缓冲, 不进列表 (load 不扫它).
+ * _buffer/ 是实时环形缓冲, 不进列表 (load 不扫它); 但冷启动时 load 会先把其中
+ * 异常退出残留的缓冲段救援到 unprocessed/ (恢复弹窗素材), 见 [rescueOrphanedSegments].
  */
 class FilesystemRecordingDataSource(
     private val context: android.content.Context? = null,
@@ -35,6 +35,9 @@ class FilesystemRecordingDataSource(
 
     /** 扫盘一次. 只扫分类目录 (pending/longterm/unprocessed), 不扫 _buffer. */
     override fun load() {
+        // 冷启动救援必须先于扫盘: 把上次异常退出残留在 _buffer/ 的缓冲段抢救进 unprocessed/,
+        // 本次扫描才能看到它们, 恢复弹窗才有素材.
+        rescueOrphanedSegments()
         val all = mutableListOf<Recording>()
         // 兼容两种用法: 生产传 context (扫 recordingsDir 分类子目录), 测试传 baseDir (扫其根目录).
         dir.listFiles()?.forEach { f ->
@@ -53,6 +56,29 @@ class FilesystemRecordingDataSource(
         }
         // 最新录音在最上方 (用户要求: 最近的在顶部)
         _state.value = all.sortedByDescending { it.createdAt }
+    }
+
+    /**
+     * 冷启动残留缓冲段救援.
+     *
+     * 正常划掉后台时, 服务的 onTaskRemoved 紧急保存会把缓冲拼接到 unprocessed/ 并清空 _buffer/.
+     * 但进程若被更快杀死 (新系统/部分 ROM 划掉即杀, onTaskRemoved 来不及跑完; 或崩溃/被系统回收),
+     * _buffer/ 里会残留 seg_*.m4a 段. 此处把它们按时间顺序无损拼接到 unprocessed/,
+     * 让启动恢复弹窗能询问用户去留; 无论成败都清理残留段 (下次缓冲会复用同名文件).
+     */
+    private fun rescueOrphanedSegments() {
+        val segs = File(dir, "_buffer").listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".m4a") && it.length() > 0L }
+            ?.sortedBy { it.lastModified() }
+            .orEmpty()
+        if (segs.isEmpty()) return
+        val destDir = File(dir, "unprocessed")
+        runCatching { destDir.mkdirs() }
+        val dest = File(destDir, "rescue_${System.currentTimeMillis()}.m4a")
+        val dur = runCatching { concatenateAudioSegments(segs, dest) }.getOrDefault(0L)
+        segs.forEach { runCatching { it.delete() } }
+        // 拼出来不足 1 秒视为空片段, 不打扰用户.
+        if (dur < 1000L) runCatching { if (dest.exists()) dest.delete() }
     }
 
     private fun toRecording(f: File, cat: RecordingCategory): Recording = Recording(
@@ -83,40 +109,13 @@ class FilesystemRecordingDataSource(
         return result
     }
 
-    private fun computeDurationMs(file: File): Long {
-        // 优先尝试 MediaMetadataRetriever.
-        val retriever = MediaMetadataRetriever()
-        val metadataResult = runCatching {
-            retriever.setDataSource(file.absolutePath)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        }.getOrDefault(0L)
-        runCatching { retriever.release() }
-        if (metadataResult > 0L) return metadataResult
-        // 回退: 用 MediaExtractor 遍历 sample 计算最大 pts.
-        return runCatching {
-            val extractor = MediaExtractor()
-            extractor.setDataSource(file.absolutePath)
-            var audioTrack = -1
-            for (t in 0 until extractor.trackCount) {
-                val mime = extractor.getTrackFormat(t).getString(MediaFormat.KEY_MIME) ?: ""
-                if (mime.startsWith("audio")) { audioTrack = t; break }
-            }
-            if (audioTrack < 0) {
-                extractor.release()
-                return@runCatching 0L
-            }
-            extractor.selectTrack(audioTrack)
-            var maxPts = 0L
-            while (true) {
-                val pts = extractor.sampleTime
-                if (pts < 0) break
-                maxPts = maxOf(maxPts, pts)
-                if (!extractor.advance()) break
-            }
-            extractor.release()
-            maxPts / 1000 // pts 单位是 us, 转 ms
-        }.getOrDefault(0L)
-    }
+    /**
+     * 读取音频文件时长 (ms). 读取失败或文件损坏返回 0.
+     *
+     * 委托共享实现 [computeAudioDurationMs] (MetadataRetriever + MediaExtractor PTS 回退),
+     * 解决 MediaMuxer 拼接产出的 m4a 在部分设备上读不到时长的问题.
+     */
+    private fun computeDurationMs(file: File): Long = computeAudioDurationMs(file)
 
     override fun getById(id: String): Recording? = _state.value.firstOrNull { it.id == id }
 
