@@ -92,6 +92,7 @@ fun EchoNavHost(
             ListScreen(
                 viewModel = listViewModel,
                 onOpenPublicDir = { navController.navigate(EchoRoutes.PUBLIC_DIR) },
+                onOpenPasswordSetup = { navController.navigate(EchoRoutes.passwordSetupRoute(false)) },
             )
         }
         composable(EchoRoutes.SETTINGS) {

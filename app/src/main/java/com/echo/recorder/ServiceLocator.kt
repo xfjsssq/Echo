@@ -3,6 +3,7 @@ package com.echo.recorder
 import android.content.Context
 import com.echo.recorder.data.FilesystemRecordingDataSource
 import com.echo.recorder.data.RecordingRepositoryImpl
+import com.echo.recorder.data.VirtualRefStore
 import com.echo.recorder.domain.recording.RecordingRepository
 
 /**
@@ -21,7 +22,7 @@ object ServiceLocator {
     private fun buildRepository(context: Context): RecordingRepository {
         val ds = FilesystemRecordingDataSource(context.applicationContext)
         ds.load()
-        // 不再注入虚引用: 公共目录方案已改为 SAF 授权 + 私有副本, 旧虚引用一并废弃.
-        return RecordingRepositoryImpl(ds)
+        // 虚引用复活: 公共目录导入 = 建索引不复制文件, 根治同一文件被无限复制的问题.
+        return RecordingRepositoryImpl(ds, VirtualRefStore(context.applicationContext))
     }
 }

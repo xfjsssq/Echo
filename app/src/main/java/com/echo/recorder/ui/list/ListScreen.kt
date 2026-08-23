@@ -94,6 +94,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -142,6 +143,9 @@ fun ListScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // 会话级"公共目录操作"解锁状态 (响应式收集: 密码验证通过后自动切到确认框).
+    val savePublicUnlocked by SessionAuth.savePublicUnlocked.collectAsStateWithLifecycle()
 
     // 删除/导入密码门控共用的哈希读取 (需在 Scaffold 之前声明供顶部按钮捕获).
     val listSettings = remember { SettingsRepository(context) }
@@ -167,6 +171,9 @@ fun ListScreen(
     // 删除密码门控: 单条删除 / 批量删除需验证密码.
     var verifySingleDelete by remember { mutableStateOf<String?>(null) }
     var verifyBatchDelete by remember { mutableStateOf(false) }
+    // 保存到公共目录: 目标录音 id + 执行中标志.
+    var exportTarget by remember { mutableStateOf<String?>(null) }
+    var exportBusy by remember { mutableStateOf(false) }
     // 每个 Tab 独立滚动状态: 临时 tab 顶部比长期 tab 多一条提示栏, 同一索引在两 tab 对应
     // 不同内容, 共享锚点会在切换后错位; 过渡期间两个 LazyColumn 也不能再挂同一个 state.
     val tempListState = rememberLazyListState()
@@ -376,7 +383,7 @@ fun ListScreen(
                                 viewModel.enterSelection(rec.id)
                             },
                             onSave = { viewModel.moveToLongTerm(rec.id) },
-                            onSaveToPublic = { viewModel.saveToPublic(rec.id) },
+                            onSaveToPublic = { exportTarget = rec.id },
                             onRename = { renameTarget = rec.id },
                             onDelete = { verifySingleDelete = rec.id },
                             onRequestPlayThis = { playingId = rec.id },
@@ -503,32 +510,79 @@ fun ListScreen(
         )
     }
 
-    // 有长期录音尚未备份到安全位置 → 引导授权备份文件夹.
-    if (state.needsPublicGrant) {
-        val grant = rememberPublicDirGrant(onGranted = { viewModel.retryPendingBackups() })
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissPublicGrantPrompt() },
-            title = { Text(stringResource(R.string.public_dir_backup_pending_title)) },
-            text = { Text(stringResource(R.string.public_dir_backup_pending_text)) },
-            confirmButton = {
-                TextButton(onClick = grant.request) {
-                    Text(stringResource(R.string.public_dir_choose_folder))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissPublicGrantPrompt() }) {
-                    Text(stringResource(R.string.not_now))
-                }
-            },
-        )
+    // 保存到公共目录 ("移动"语义): 会话级密码门控 → 确认对话框 → 执行 + 结果反馈.
+    exportTarget?.let { id ->
+        val rec = items.firstOrNull { it.id == id }
+        if (rec == null) {
+            // 录音已不在列表 (被其他流程删除等): 直接收起, 不卡界面.
+            LaunchedEffect(id) { exportTarget = null }
+        } else if (listStoredHash != null && !savePublicUnlocked) {
+            // 会话内首次需密码 (与导入共用同一会话锁: 一边验证过, 另一边免密).
+            PasswordPromptDialog(
+                storedHash = listStoredHash,
+                recoveryHash = null,
+                onVerify = { SessionAuth.unlockSavePublic() },
+                onDismiss = { exportTarget = null },
+            )
+        } else {
+            // API 29 及以下写公共目录需运行时权限: 授权成功后自动接着执行.
+            var pendingExportRun by remember { mutableStateOf<(() -> Unit)?>(null) }
+            val grant = rememberPublicDirGrant(onGranted = {
+                pendingExportRun?.invoke()
+                pendingExportRun = null
+            })
+            AlertDialog(
+                onDismissRequest = {
+                    if (!exportBusy) { pendingExportRun = null; exportTarget = null }
+                },
+                shape = RoundedCornerShape(24.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                title = { Text(stringResource(R.string.export_confirm_title)) },
+                text = { Text(stringResource(R.string.export_confirm_text)) },
+                confirmButton = {
+                    TextButton(
+                        enabled = !exportBusy,
+                        onClick = {
+                            val runExport: () -> Unit = {
+                                exportBusy = true
+                                scope.launch {
+                                    val outcome = viewModel.exportToPublic(id)
+                                    exportBusy = false
+                                    exportTarget = null
+                                    val msg = when (outcome) {
+                                        PublicDirManager.SaveOutcome.Saved -> R.string.export_done
+                                        PublicDirManager.SaveOutcome.NameConflict -> R.string.export_conflict
+                                        PublicDirManager.SaveOutcome.Failed -> R.string.export_failed
+                                    }
+                                    Toast.makeText(context, context.getString(msg), Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            if (PublicDirManager.writeNeedsGrant() && !grant.granted) {
+                                pendingExportRun = runExport
+                                grant.request()
+                            } else {
+                                runExport()
+                            }
+                        },
+                    ) { Text(stringResource(R.string.confirm)) }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !exportBusy,
+                        onClick = { pendingExportRun = null; exportTarget = null },
+                    ) { Text(stringResource(R.string.cancel)) }
+                },
+            )
+        }
     }
 }
 
 /**
  * 从公共目录导入对话框.
- * - 若开启密码保护, 先验证密码.
- * - 未授权备份文件夹时, 先引导用户通过系统选择器授权 (SAF).
- * - 授权后列出备份文件夹中尚未导入的 .m4a 文件, 用户多选后复制到应用长期目录.
+ * - 若开启密码保护, 先验证密码 (仅此处需要输入法; 其余环节无输入框).
+ * - 未授权备份文件夹时, 先引导用户授权 (运行时权限, 全应用共享, 一次授权永久生效).
+ * - 授权后列出备份文件夹中尚未进入长期列表的 .m4a 文件, 多选导入.
+ *   导入 = 建立虚引用: 文件留在公共目录, 列表只加索引, 零物理复制, 不会越导越多.
  */
 @Composable
 private fun ImportFromPublicDirDialog(
@@ -556,11 +610,20 @@ private fun ImportFromPublicDirDialog(
     var loading by remember { mutableStateOf(false) }
     val grant = rememberPublicDirGrant()
 
+    // 输入法防御: 密码对话框退出时已主动收起键盘, 此处兜底个别 ROM 的残留;
+    // 导入流程其余环节没有任何输入框, 键盘不该再出现.
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) { keyboardController?.hide() }
+    fun close() {
+        keyboardController?.hide()
+        onDismiss()
+    }
+
     // 验证 + 授权都通过后扫描可导入文件.
     LaunchedEffect(verified, grant.granted) {
         if (verified && grant.granted) {
             loading = true
-            importable = viewModel.scanImportable(context)
+            importable = viewModel.scanImportable()
             loading = false
         }
     }
@@ -569,13 +632,13 @@ private fun ImportFromPublicDirDialog(
         if (storedHash == null) {
             // 防线: 从未设置过密码 → 不允许使用导入 (主入口已引导, 此处兜底拦截).
             AlertDialog(
-                onDismissRequest = onDismiss,
+                onDismissRequest = { close() },
                 shape = RoundedCornerShape(24.dp),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 title = { Text(stringResource(R.string.public_dir_password_required_title)) },
                 text = { Text(stringResource(R.string.public_dir_password_required_text)) },
                 confirmButton = {
-                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+                    TextButton(onClick = { close() }) { Text(stringResource(R.string.close)) }
                 },
             )
             return
@@ -591,7 +654,7 @@ private fun ImportFromPublicDirDialog(
                         showImportDialog = true
                     }
                 },
-                onDismiss = onDismiss,
+                onDismiss = { close() },
             )
         } else {
             // 设置过密码但当前关闭了验证: 与删除录音门控同语义, 直接放行.
@@ -607,7 +670,7 @@ private fun ImportFromPublicDirDialog(
     if (!showImportDialog) return
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { close() },
         shape = RoundedCornerShape(24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text(stringResource(R.string.import_from_public_dir_title)) },
@@ -657,26 +720,31 @@ private fun ImportFromPublicDirDialog(
                 onClick = {
                     val chosen = importable.filter { it.fileName in selected }
                     scope.launch {
-                        val added = viewModel.importFromPublicDir(context, chosen)
+                        val added = viewModel.importFromPublicDir(chosen)
                         SessionAuth.unlockSavePublic()
                         Toast.makeText(
                             context,
                             context.getString(R.string.import_done, added),
                             Toast.LENGTH_SHORT,
                         ).show()
-                        onDismiss()
+                        close()
                     }
                 },
                 enabled = selected.isNotEmpty() && grant.granted,
             ) { Text(stringResource(R.string.import_selected)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = { close() }) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
 
 private fun shareRecording(context: Context, rec: Recording) {
+    if (rec.isPublicVirtual) {
+        // 虚引用: 文件实体在公共目录, 走 content:// URI 分享 (内部经缓存临时文件中转).
+        ShareHelper.shareAudioUri(context, android.net.Uri.parse(rec.fileUrl))
+        return
+    }
     val file = runCatching { java.io.File(java.net.URI(rec.fileUrl)) }.getOrNull() ?: return
     if (!file.exists()) return
     ShareHelper.shareAudio(context, file, "${context.packageName}.fileprovider")
@@ -1150,18 +1218,20 @@ private fun MiniPlayer(
                 iconSize = 18.dp,
                 modifier = Modifier.padding(horizontal = 2.dp),
             )
-            // 重命名.
-            FeatheredOrbIcon(
-                icon = Icons.Filled.Edit,
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
-                contentDescription = stringResource(R.string.rename),
-                onClick = onRename,
-                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
-                buttonSize = 38.dp,
-                iconSize = 18.dp,
-                modifier = Modifier.padding(horizontal = 2.dp),
-            )
+            // 重命名. 虚引用不提供: 改名会破坏"列表名 = 公共目录文件名"的导入去重判据.
+            if (!rec.isPublicVirtual) {
+                FeatheredOrbIcon(
+                    icon = Icons.Filled.Edit,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    glowColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
+                    contentDescription = stringResource(R.string.rename),
+                    onClick = onRename,
+                    iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    buttonSize = 38.dp,
+                    iconSize = 18.dp,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+            }
             FeatheredOrbIcon(
                 icon = Icons.Filled.Delete,
                 color = Color(0xFFF48FB1),

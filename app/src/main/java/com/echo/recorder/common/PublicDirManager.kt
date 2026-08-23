@@ -56,9 +56,17 @@ object PublicDirManager {
         else -> Manifest.permission.WRITE_EXTERNAL_STORAGE
     }
 
-    /** 是否已获得备份文件夹访问授权 (权限语义). */
-    suspend fun hasGrant(context: Context): Boolean =
+    /**
+     * 是否已获得备份文件夹访问授权.
+     *
+     * 运行时权限是系统级全局状态: 任一入口 (列表页/设置页) 授权一次即永久生效,
+     * 所有入口只读它即可, 绝不应各自反复弹授权. 同步读取, 供生命周期回调直接使用.
+     */
+    fun hasGrant(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, requiredPermission()) == PackageManager.PERMISSION_GRANTED
+
+    /** 写入备份文件夹是否需要运行时权限: API 30+ 插入本应用自己的条目免权限, 29 及以下需要. */
+    fun writeNeedsGrant(): Boolean = Build.VERSION.SDK_INT <= 29
 
     /** 备份文件夹的本地绝对路径 (API 26-28 直接用; API 29+ 仅兜底). */
     private fun legacyDir(): File =
@@ -110,14 +118,33 @@ object PublicDirManager {
             .orEmpty()
     }.getOrDefault(emptyList())
 
-    /** 复制私有文件到备份文件夹. 同名文件已存在则视为已备份 (幂等), 直接返回成功. */
-    suspend fun copyToPublic(context: Context, src: File, fileName: String): Boolean = withContext(Dispatchers.IO) {
-        if (Build.VERSION.SDK_INT >= 29) copyViaMediaStore(context, src, fileName) else copyViaFile(src, fileName)
+    /** 私有文件保存到备份文件夹的结果. */
+    sealed interface SaveOutcome {
+        /** 已就位 (新写入成功, 或公共目录已有同名同大小的同一文件). 私有侧可安全移除. */
+        object Saved : SaveOutcome
+        /** 公共目录已有同名但大小不同的文件 —— 拒绝覆盖/堆叠, 私有侧保留原件. */
+        object NameConflict : SaveOutcome
+        /** 写入失败. */
+        object Failed : SaveOutcome
     }
 
-    private fun copyViaMediaStore(context: Context, src: File, fileName: String): Boolean {
-        if (Build.VERSION.SDK_INT < 29) return copyViaFile(src, fileName)
-        if (findViaMediaStore(context, fileName) != null) return true // 已备份过
+    /**
+     * 保存私有文件到备份文件夹 (幂等, 绝不产生重复副本):
+     * - 同名同大小已存在 → 视为同一文件已就位 ([SaveOutcome.Saved]), 不重复写入;
+     * - 同名但大小不同 → 冲突 ([SaveOutcome.NameConflict]), 绝不覆盖也不改名堆叠;
+     * - 不存在 → 新写入.
+     */
+    suspend fun saveToPublic(context: Context, src: File, fileName: String): SaveOutcome = withContext(Dispatchers.IO) {
+        if (Build.VERSION.SDK_INT >= 29) saveViaMediaStore(context, src, fileName) else saveViaFile(src, fileName)
+    }
+
+    private fun saveViaMediaStore(context: Context, src: File, fileName: String): SaveOutcome {
+        if (Build.VERSION.SDK_INT < 29) return saveViaFile(src, fileName)
+        if (!src.exists() || src.length() == 0L) return SaveOutcome.Failed
+        // 查重: 同名条目已存在时按大小区分"同一文件"与"冲突", 绝不二次插入堆叠副本.
+        findEntry(context, fileName)?.let { (_, size) ->
+            return if (size == src.length()) SaveOutcome.Saved else SaveOutcome.NameConflict
+        }
         // Android 10+ MediaProvider 禁止向 Audio 集合插入 Download/ 下的文件
         // (抛 IllegalArgumentException: "Primary directory Download not allowed"),
         // 必须走 Downloads 集合; 条目按 MIME 归为音频类型, Audio 集合的查询/扫描仍能命中.
@@ -130,32 +157,35 @@ object PublicDirManager {
         var uri: Uri? = null
         return runCatching {
             val inserted = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: return@runCatching false
+                ?: return@runCatching SaveOutcome.Failed
             uri = inserted
             context.contentResolver.openOutputStream(inserted)?.use { dst ->
                 src.inputStream().use { it.copyTo(dst) }
-            } ?: return@runCatching false
+            } ?: return@runCatching SaveOutcome.Failed
             // 写入完成后清除 IS_PENDING, 让系统媒体库/文件管理器可见.
             context.contentResolver.update(
                 inserted,
                 ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
                 null, null,
             )
-            true
+            SaveOutcome.Saved
         }.onFailure {
             // 失败时清理残留 pending 条目, 否则系统保留不可见的 .pending-* 文件数天
             uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
-        }.getOrDefault(false)
+        }.getOrDefault(SaveOutcome.Failed)
     }
 
-    private fun copyViaFile(src: File, fileName: String): Boolean = runCatching {
+    private fun saveViaFile(src: File, fileName: String): SaveOutcome = runCatching {
+        if (!src.exists() || src.length() == 0L) return@runCatching SaveOutcome.Failed
         val dir = legacyDir()
         dir.mkdirs()
         val dest = File(dir, fileName)
-        if (dest.exists()) return@runCatching true
+        if (dest.exists()) {
+            return@runCatching if (dest.length() == src.length()) SaveOutcome.Saved else SaveOutcome.NameConflict
+        }
         src.copyTo(dest)
-        true
-    }.getOrDefault(false)
+        SaveOutcome.Saved
+    }.getOrDefault(SaveOutcome.Failed)
 
     /**
      * 删除备份文件夹中的指定文件的结果.
@@ -179,7 +209,7 @@ object PublicDirManager {
     /** 删除备份文件夹中的指定文件. */
     suspend fun deletePublic(context: Context, fileName: String): DeleteResult = withContext(Dispatchers.IO) {
         if (Build.VERSION.SDK_INT >= 29) {
-            val uri = findViaMediaStore(context, fileName) ?: return@withContext DeleteResult.NotFound
+            val uri = findEntry(context, fileName)?.first ?: return@withContext DeleteResult.NotFound
             try {
                 if (context.contentResolver.delete(uri, null, null) > 0) {
                     DeleteResult.Success
@@ -212,21 +242,25 @@ object PublicDirManager {
         }.getOrNull()
     }
 
-    /** 按文件名在 MediaStore 中查找条目 (API 29+). */
-    private fun findViaMediaStore(context: Context, fileName: String): Uri? = runCatching {
-        val projection = arrayOf(MediaStore.Audio.Media._ID)
+    /** 按文件名在 MediaStore 中查找条目 (API 29+), 返回 URI 与文件大小 (供保存查重). */
+    private fun findEntry(context: Context, fileName: String): Pair<Uri, Long>? = runCatching {
+        val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.SIZE)
         val selection = "${MediaStore.Audio.Media.RELATIVE_PATH} = ? AND ${MediaStore.Audio.Media.DISPLAY_NAME} = ?"
         val args = arrayOf("$RELATIVE_PATH/", fileName)
-        var found: Uri? = null
+        var found: Pair<Uri, Long>? = null
         context.contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             projection, selection, args, null,
         )?.use { cursor ->
             if (cursor.moveToFirst()) {
-                found = ContentUris.withAppendedId(
+                val uri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                     cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)),
                 )
+                val size = runCatching {
+                    cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE))
+                }.getOrDefault(-1L)
+                found = uri to size
             }
         }
         found

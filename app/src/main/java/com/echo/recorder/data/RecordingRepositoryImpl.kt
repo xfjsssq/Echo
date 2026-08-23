@@ -5,6 +5,7 @@ import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.domain.recording.RecordingRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.io.File
@@ -37,7 +38,15 @@ class RecordingRepositoryImpl(
     override suspend fun create(file: File, durationMs: Long, createdAt: Long): Recording =
         ds.upsert(file, durationMs, createdAt)
 
-    override suspend fun delete(id: String): Boolean = ds.delete(id)
+    override suspend fun delete(id: String): Boolean {
+        // 虚引用: 只移除列表索引, 公共目录中的文件本体绝不动 (它要活过卸载).
+        val refs = virtualRefs
+        if (refs != null && refs.refs.first().any { it.id == id }) {
+            refs.remove(id)
+            return true
+        }
+        return ds.delete(id)
+    }
 
     override suspend fun deleteExpiredTemporary(maxAgeMs: Long): Int =
         ds.deleteExpiredTemporary(maxAgeMs)

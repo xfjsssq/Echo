@@ -204,10 +204,15 @@
     <string name="save_to_public_done">Saved to public directory</string>
     <string name="import_from_public_dir">Import</string>
     <string name="import_from_public_dir_title">Import from public directory</string>
-    <string name="import_from_public_dir_note">Select recordings to import into the long-term list</string>
+    <string name="import_from_public_dir_note">Select recordings to add to the long-term list. Files stay in the public folder — only an index is added, no duplicate copies.</string>
     <string name="import_selected">Import selected</string>
     <string name="save_to_public_dir">Save to public folder</string>
-    <string name="import_done">Imported %1$d file(s)</string>
+    <string name="export_confirm_title">Save to public folder</string>
+    <string name="export_confirm_text">After saving, this recording will be removed from the app list. The file will be stored in the system public folder (Download/EchoBackup) and survive app uninstall. Save now?</string>
+    <string name="export_done">Saved to public folder and removed from the list</string>
+    <string name="export_conflict">A different file with the same name already exists in the public folder. Not saved.</string>
+    <string name="export_failed">Save failed. Please try again.</string>
+    <string name="import_done">Added %1$d recording(s)</string>
     <string name="import_no_new">No new files to import</string>
     <string name="public_dir_delete_note">This permanently deletes the original file in the backup folder. It cannot be undone. Recordings inside the app are not affected.</string>
     <string name="public_dir_delete_failed">Failed to delete. Please try again.</string>
@@ -216,10 +221,7 @@
     <string name="go_set_password">Set Password</string>
     <string name="public_dir_files_subtitle">View files in the backup folder</string>
     <string name="public_dir_choose_folder">Allow access</string>
-    <string name="public_dir_choose_folder_note">Recordings are automatically backed up to a safe location in the system Download folder and survive app uninstall. Allow access to continue.</string>
-    <string name="public_dir_backup_pending_title">Backup folder needed</string>
-    <string name="public_dir_backup_pending_text">Some recordings have not been backed up yet. Once you allow access, recordings are backed up automatically and survive app uninstall.</string>
-    <string name="not_now">Not now</string>
+    <string name="public_dir_choose_folder_note">Files in the public folder are stored in the system Download folder and survive app uninstall. Allow access to continue.</string>
 
     <!-- About -->
     <string name="version">Version</string>

@@ -1,5 +1,6 @@
 package com.echo.recorder.ui.list
 
+import android.app.Activity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -43,6 +44,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import com.echo.recorder.R
 import com.echo.recorder.common.PublicDirManager
 import com.echo.recorder.settings.PasswordCrypto
@@ -54,6 +58,7 @@ import com.echo.recorder.ui.common.rememberPublicDirGrant
 import com.echo.recorder.ui.common.rememberShakeState
 import com.echo.recorder.ui.common.shake
 import com.echo.recorder.ui.fmtTime
+import com.echo.recorder.ui.lock.MixedPasswordInput
 import com.echo.recorder.ui.lock.PasswordInputField
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -61,10 +66,11 @@ import kotlinx.coroutines.launch
 /**
  * 公共目录 (备份文件夹) 文件管理界面.
  *
- * 直接扫描 SAF 授权的备份文件夹, 列出所有 .m4a 文件.
+ * 直接扫描备份文件夹, 列出所有 .m4a 文件.
  * 此界面中的文件仅可查看和删除 (删除备份文件夹中的原始文件, 永久删除不可恢复),
  * 不可播放、不可导入 (导入入口在列表页).
  * 删除需双重验证 (若已开密码): 应用密码 + 恢复密钥; 未开密码时仅一次确认.
+ * 门槛: 从未设置过密码时不可使用本页 (公共目录属敏感功能, 先设密码).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,6 +100,17 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
     val recoveryHash by produceState<String?>(initialValue = null) {
         value = settings.recoveryHash.first()
     }
+    // 密码验证输入框按实际类型适配: mixed 用户输不了纯数字框 (此前写死数字键盘,
+    // 扩展密码用户无法通过验证 = 删除是空架子).
+    val passwordType by produceState(initialValue = "pin") {
+        value = settings.passwordType.first() ?: "pin"
+    }
+
+    // 公共目录门槛: null=读取中 false=从未设置密码(拦截) true=已设置.
+    // 独立读一次 DataStore 而非复用 produceState 初值 —— 后者初值 null 无法区分
+    // "加载中"与"无密码", 会把有密码用户误拦一瞬.
+    var passwordGate by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(Unit) { passwordGate = settings.passwordHash.first() != null }
 
     var pendingDelete by remember { mutableStateOf<PublicDirManager.PublicFileInfo?>(null) }
     // 验证步骤: 0=确认删除 1=输密码 2=输恢复密钥
@@ -110,16 +127,64 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
         }
     }
 
+    // 删除系统授权返回后重试的目标 (MediaStore 他人条目需用户在系统对话框确认).
+    var deleteAfterPermission by remember { mutableStateOf<PublicDirManager.PublicFileInfo?>(null) }
+    // 授权成功后的重删不再走系统授权分支 (用户刚确认过; 再需要授权属异常, 按失败处理).
+    val deletePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        val target = deleteAfterPermission
+        deleteAfterPermission = null
+        if (result.resultCode == Activity.RESULT_OK && target != null) {
+            performDelete(
+                context = context,
+                scope = scope,
+                target = target,
+                onCleared = { pendingDelete = null; verifyStep = 0; input = ""; errorRes = null; load() },
+                onNeedsPermission = { errorRes = R.string.public_dir_delete_failed },
+                onFailed = { errorRes = R.string.public_dir_delete_failed },
+            )
+        }
+    }
+
     fun deleteNow(target: PublicDirManager.PublicFileInfo) {
         haptics.confirm()
-        scope.launch {
-            PublicDirManager.deletePublic(context, target.fileName)
-            pendingDelete = null
-            verifyStep = 0
-            input = ""
-            errorRes = null
-            load()
+        performDelete(
+            context = context,
+            scope = scope,
+            target = target,
+            onCleared = { pendingDelete = null; verifyStep = 0; input = ""; errorRes = null; load() },
+            onNeedsPermission = { sender ->
+                // 卸载重装等场景: 备份条目归上一次安装所有, 系统要求用户确认授权删除.
+                deleteAfterPermission = target
+                deletePermissionLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            },
+            onFailed = {
+                // 明确告知失败, 不再静默 (此前返回值被忽略, 删不掉也无任何反馈).
+                errorRes = R.string.public_dir_delete_failed
+            },
+        )
+    }
+
+    // 读取密码状态中: 只显示加载态, 不渲染任何文件内容 (门槛判定完成前不泄数据).
+    if (passwordGate == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            LoadingPulse()
         }
+        return
+    }
+
+    // 无密码防线: 从未设置过密码时不进入文件管理 (设置页/列表页入口已引导, 此处兜底).
+    if (passwordGate == false) {
+        AlertDialog(
+            onDismissRequest = onBack,
+            title = { Text(stringResource(R.string.public_dir_password_required_title)) },
+            text = { Text(stringResource(R.string.public_dir_password_required_text)) },
+            confirmButton = {
+                TextButton(onClick = onBack) { Text(stringResource(R.string.back)) }
+            },
+        )
+        return
     }
 
     // 删除确认 / 双重验证对话框.
@@ -164,12 +229,21 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.shake(shake),
                     ) {
-                        PasswordInputField(
-                            value = input,
-                            onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); errorRes = null },
-                            label = stringResource(R.string.input_password),
-                            keyboardType = KeyboardType.Number,
-                        )
+                        // 按用户实际的密码类型展示对应输入框: mixed 用户无法在纯数字框输入.
+                        if (passwordType == "mixed") {
+                            MixedPasswordInput(
+                                value = input,
+                                onValueChange = { input = it; errorRes = null },
+                                label = stringResource(R.string.input_password),
+                            )
+                        } else {
+                            PasswordInputField(
+                                value = input,
+                                onValueChange = { input = it.filter { c -> c.isDigit() }.take(6); errorRes = null },
+                                label = stringResource(R.string.input_password),
+                                keyboardType = KeyboardType.Number,
+                            )
+                        }
                         errorRes?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                     }
                 },
@@ -310,6 +384,28 @@ fun PublicDirManagementScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 执行删除并分发结果.
+ * 顶级函数以打破 "launcher 回调 ↔ deleteNow 局部函数" 的前向引用环
+ * (Kotlin 局部函数不能先被引用后定义).
+ */
+private fun performDelete(
+    context: android.content.Context,
+    scope: kotlinx.coroutines.CoroutineScope,
+    target: PublicDirManager.PublicFileInfo,
+    onCleared: suspend () -> Unit,
+    onNeedsPermission: (android.content.IntentSender) -> Unit,
+    onFailed: () -> Unit,
+) {
+    scope.launch {
+        when (val r = PublicDirManager.deletePublic(context, target.fileName)) {
+            PublicDirManager.DeleteResult.Success, PublicDirManager.DeleteResult.NotFound -> onCleared()
+            is PublicDirManager.DeleteResult.NeedsPermission -> onNeedsPermission(r.intentSender)
+            PublicDirManager.DeleteResult.Failed -> onFailed()
         }
     }
 }

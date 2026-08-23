@@ -22,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.echo.recorder.R
@@ -61,6 +63,18 @@ fun PasswordPromptDialog(
     val repo = remember { SettingsRepository(context) }
     val passwordType by produceState<String?>(initialValue = null) {
         value = repo.passwordType.first()
+    }
+
+    // 退出 (验证通过/取消) 前必须主动隐藏键盘并清焦点:
+    // 输入框组件持有"焦点期间键盘必须可见"的常驻补弹不变式 (国产 ROM 唤不醒的修复),
+    // 且初始弹出走 SHOW_FORCED —— 不主动 hide, 对话框关闭后输入法会一直赖在后续界面上,
+    // 表现为"点过一次导入按钮, 输入法就一直跟着弹".
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    fun exit(action: () -> Unit) {
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
+        action()
     }
 
     var error by remember { mutableStateOf(false) }
@@ -103,7 +117,7 @@ fun PasswordPromptDialog(
             return
         }
         AlertDialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = { exit(onDismiss) },
             shape = RoundedCornerShape(24.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text(stringResource(R.string.reset_password_with_recovery)) },
@@ -128,17 +142,17 @@ fun PasswordPromptDialog(
             confirmButton = {
                 TextButton(onClick = {
                     if (PasswordVerifier.verifyRecovery(recoveryInput, recoveryHash) == PasswordVerifier.Result.Success) {
-                        onVerify()
+                        exit(onVerify)
                     } else {
                         error = true
                         lockSeconds = LockoutManager.remainingSeconds().toInt()
                     }
                 }) { Text(stringResource(R.string.confirm)) }
             },
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-            },
-        )
+                dismissButton = {
+                    TextButton(onClick = { exit(onDismiss) }) { Text(stringResource(R.string.cancel)) }
+                },
+            )
         return
     }
 
@@ -146,14 +160,14 @@ fun PasswordPromptDialog(
     if (lockSeconds > 0) {
         LockoutDialog(
             lockSeconds = lockSeconds,
-            onDismiss = onDismiss,
+            onDismiss = { exit(onDismiss) },
         )
         return
     }
 
     var input by remember { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { exit(onDismiss) },
         shape = RoundedCornerShape(24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text(stringResource(R.string.input_password)) },
@@ -170,7 +184,7 @@ fun PasswordPromptDialog(
                         label = stringResource(R.string.mixed_input_hint),
                         onImeAction = {
                             when (PasswordVerifier.verifyPassword(input, storedHash)) {
-                                PasswordVerifier.Result.Success -> { haptics.confirm(); onVerify() }
+                                PasswordVerifier.Result.Success -> { haptics.confirm(); exit(onVerify) }
                                 PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
                                 PasswordVerifier.Result.Wrong -> {
                                     error = true
@@ -183,7 +197,7 @@ fun PasswordPromptDialog(
                     Spacer(Modifier.height(4.dp))
                     Button(onClick = {
                         when (PasswordVerifier.verifyPassword(input, storedHash)) {
-                            PasswordVerifier.Result.Success -> { haptics.confirm(); onVerify() }
+                            PasswordVerifier.Result.Success -> { haptics.confirm(); exit(onVerify) }
                             PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
                             PasswordVerifier.Result.Wrong -> {
                                 error = true
@@ -197,7 +211,7 @@ fun PasswordPromptDialog(
                     PinInput(
                         onComplete = { pin ->
                             when (PasswordVerifier.verifyPassword(pin, storedHash)) {
-                                PasswordVerifier.Result.Success -> { haptics.confirm(); onVerify() }
+                                PasswordVerifier.Result.Success -> { haptics.confirm(); exit(onVerify) }
                                 PasswordVerifier.Result.Locked -> { lockSeconds = LockoutManager.remainingSeconds().toInt() }
                                 PasswordVerifier.Result.Wrong -> {
                                     error = true
@@ -221,7 +235,7 @@ fun PasswordPromptDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = { exit(onDismiss) }) { Text(stringResource(R.string.cancel)) }
         },
     )
 }

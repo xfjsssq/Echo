@@ -221,10 +221,15 @@
     <string name="save_to_public_done">已保存到公共目录</string>
     <string name="import_from_public_dir">导入</string>
     <string name="import_from_public_dir_title">从公共目录导入</string>
-    <string name="import_from_public_dir_note">选择要导入到长期列表的录音文件</string>
+    <string name="import_from_public_dir_note">选择要加入长期列表的录音。文件保留在公共目录，只建立索引，不会复制出多份。</string>
     <string name="import_selected">导入所选</string>
     <string name="save_to_public_dir">保存到公共目录</string>
-    <string name="import_done">已导入 %1$d 个文件</string>
+    <string name="export_confirm_title">保存到公共目录</string>
+    <string name="export_confirm_text">保存后，这条录音将从应用列表中移除，文件存入系统公共目录（Download/EchoBackup），卸载应用后仍然保留。确定保存吗？</string>
+    <string name="export_done">已保存到公共目录，录音已从列表移除</string>
+    <string name="export_conflict">公共目录已有同名但内容不同的文件，未保存</string>
+    <string name="export_failed">保存失败，请重试</string>
+    <string name="import_done">已加入 %1$d 个录音</string>
     <string name="import_no_new">没有可导入的新文件</string>
     <string name="public_dir_delete_note">将永久删除备份文件夹中的原始文件，不可恢复。应用内的录音不受影响。</string>
     <string name="public_dir_delete_failed">删除失败，请重试</string>
@@ -233,10 +238,7 @@
     <string name="go_set_password">去设置密码</string>
     <string name="public_dir_files_subtitle">查看备份文件夹中的文件</string>
     <string name="public_dir_choose_folder">允许访问</string>
-    <string name="public_dir_choose_folder_note">录音会自动备份到系统下载文件夹的安全位置，卸载应用也不会丢失。请允许访问以继续。</string>
-    <string name="public_dir_backup_pending_title">需要备份文件夹</string>
-        <string name="public_dir_backup_pending_text">有录音尚未备份到安全位置。允许访问后，录音会自动备份，卸载应用也不会丢失。</string>
-    <string name="not_now">暂不</string>
+    <string name="public_dir_choose_folder_note">公共目录文件存放在系统下载文件夹中，卸载应用也不会丢失。请允许访问以继续。</string>
 
     <!-- 关于 -->
     <string name="version">版本</string>

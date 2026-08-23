@@ -1,18 +1,20 @@
 package com.echo.recorder.ui.list
 
 import android.content.Context
-import android.media.MediaMetadataRetriever
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.echo.recorder.ServiceLocator
 import com.echo.recorder.common.PublicDirManager
+import com.echo.recorder.common.computeAudioDurationMs
 import com.echo.recorder.common.longtermDir
+import com.echo.recorder.data.VirtualRefStore
 import com.echo.recorder.domain.model.Recording
 import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.domain.recording.RecordingRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URI
@@ -29,8 +31,6 @@ data class ListUiState(
     val selected: Set<String> = emptySet(),
     /** 当前原地展开的条目 id. */
     val expandedId: String? = null,
-    /** 存在尚未备份到安全位置的长期录音, 需要用户授权备份文件夹. */
-    val needsPublicGrant: Boolean = false,
 )
 
 /**
@@ -38,9 +38,11 @@ data class ListUiState(
  *
  * - 双分类 Tab (临时/长期), 物理目录即真相.
  * - 多选模式: 长按进入, 批量移至长期 / 批量删除.
- * - 自动备份: 录音成为长期录音时自动复制到备份文件夹 (SAF), 永远默认开启;
- *   尚未授权时置 [ListUiState.needsPublicGrant], 由 UI 引导用户选择文件夹后重试.
- * - 从备份文件夹导入 = 复制到应用私有长期目录, 作为普通长期录音 (不再有虚引用).
+ * - 长期目录是私有空间 (随应用卸载删除); 公共目录才是永久存储.
+ *   保存到公共目录 = "移动": 查重复制成功后从应用内移除; 没有任何静默自动备份,
+ *   不产生用户不知情的副本.
+ * - 从公共目录导入 = 建立虚引用 (文件留在公共目录, 列表只加索引, 零物理复制),
+ *   同一文件永远不会越导入越多; 已在长期列表的文件不再出现在导入列表.
  */
 class ListViewModel(
     private val context: Context,
@@ -50,6 +52,9 @@ class ListViewModel(
     private val _state = MutableStateFlow(ListUiState())
     val state: StateFlow<ListUiState> = _state.asStateFlow()
 
+    /** 公共目录虚引用索引 (与 Repository 注入的是同一 DataStore 实例). */
+    private val virtualRefStore = VirtualRefStore(context)
+
     init {
         viewModelScope.launch {
             repository.getAll().collect { all ->
@@ -57,8 +62,6 @@ class ListViewModel(
                     temporary = all.filter { it.category == RecordingCategory.TEMPORARY },
                     longTerm = all.filter { it.category == RecordingCategory.LONG_TERM },
                 )
-                // 冷启动补扫: 把之前没备份过的长期录音补备份/提示授权.
-                viewModelScope.launch { sweepUnbacked() }
             }
         }
     }
@@ -85,120 +88,63 @@ class ListViewModel(
     }
 
     /**
-     * 自动备份: 录音成为长期录音后, 自动复制到备份文件夹.
-     * 未授权或复制失败时置 needsPublicGrant, 由 UI 引导授权后重试.
+     * 保存到公共目录 ("移动"语义):
+     * 查重写入备份文件夹 —— 成功或同名同大小文件已在位 ([PublicDirManager.SaveOutcome.Saved])
+     * 则把该录音从应用内移除 (文件实体从此只在公共目录); 冲突/失败则原样保留.
      */
-    private suspend fun backupToPublic(rec: Recording) {
-        if (rec.isPublicVirtual) return
-        val src = runCatching { File(URI(rec.fileUrl)) }.getOrNull() ?: return
-        if (!src.exists()) return
-        if (!PublicDirManager.copyToPublic(context, src, src.name)) {
-            _state.value = _state.value.copy(needsPublicGrant = true)
+    suspend fun exportToPublic(id: String): PublicDirManager.SaveOutcome {
+        val rec = _state.value.longTerm.firstOrNull { it.id == id }
+            ?: return PublicDirManager.SaveOutcome.Failed
+        if (rec.isPublicVirtual) return PublicDirManager.SaveOutcome.Failed
+        val src = runCatching { File(URI(rec.fileUrl)) }.getOrNull()
+            ?: return PublicDirManager.SaveOutcome.Failed
+        if (!src.exists()) return PublicDirManager.SaveOutcome.Failed
+        val outcome = PublicDirManager.saveToPublic(context, src, src.name)
+        if (outcome == PublicDirManager.SaveOutcome.Saved) {
+            repository.delete(id)
         }
+        return outcome
     }
 
     /**
-     * 用户授权备份文件夹后调用: 补备份所有尚未备份的长期录音, 并关闭授权提示.
+     * 扫描备份文件夹中尚未进入长期列表的 .m4a 文件.
+     * 去重判据 = 文件名: 私有长期目录已有同名文件, 或已建立虚引用的, 一律不再显示
+     * (文件本体仍在公共目录, 只是不重复出现在导入列表).
      */
-    fun retryPendingBackups() {
-        viewModelScope.launch {
-            val backedUp = PublicDirManager.scanPublic(context).map { it.fileName }.toSet()
-            val pending = _state.value.longTerm.filter { rec ->
-                val name = runCatching { File(URI(rec.fileUrl)).name }.getOrNull()
-                name != null && name !in backedUp && !rec.isPublicVirtual
-            }
-            pending.forEach { backupToPublic(it) }
-            _state.value = _state.value.copy(needsPublicGrant = false)
-        }
-    }
-
-    /** 关闭"需要备份文件夹"提示 (用户选择暂不). */
-    fun dismissPublicGrantPrompt() {
-        _state.value = _state.value.copy(needsPublicGrant = false)
-    }
-
-    /**
-     * 冷启动/进入时补扫: 已有长期录音但未备份 → 提示授权; 已授权 → 自动补备份.
-     */
-    private suspend fun sweepUnbacked() {
-        if (!PublicDirManager.hasGrant(context)) {
-            val longs = _state.value.longTerm
-            if (longs.any { !it.isPublicVirtual }) {
-                _state.value = _state.value.copy(needsPublicGrant = true)
-            }
-            return
-        }
-        retryPendingBackups()
-    }
-
-    /**
-     * 扫描备份文件夹中尚未导入的 .m4a 文件 (同名已存在于长期目录的跳过).
-     */
-    suspend fun scanImportable(context: Context): List<PublicDirManager.PublicFileInfo> {
+    suspend fun scanImportable(): List<PublicDirManager.PublicFileInfo> {
         val all = PublicDirManager.scanPublic(context)
-        val existing = longtermDir(context).listFiles()?.map { it.name }?.toSet() ?: emptySet()
-        return all.filter { it.fileName !in existing }
+        if (all.isEmpty()) return emptyList()
+        val virtualNames = virtualRefStore.refs.first().map { it.displayName }.toSet()
+        val privateNames = longtermDir(context).listFiles()?.map { it.name }?.toSet() ?: emptySet()
+        return all.filter { it.fileName !in virtualNames && it.fileName !in privateNames }
     }
 
     /**
-     * 从备份文件夹导入: 复制到应用私有长期目录, 作为普通长期录音.
-     * - 目标文件名改为基于源文件修改时间的日期名 (如 "7月23日 14:30.m4a"), 重名自动加序号.
-     * - createdAt 使用源文件修改时间, 使导入的历史录音按原始日期分组.
-     * 删除这类录音只删除私有副本, 备份文件夹中的原始文件保持不动 (永久备份).
+     * 从备份文件夹导入 = 建立虚引用: 文件留在公共目录 (卸载不丢), 列表只加索引,
+     * 零物理复制 —— 同一文件不会再越导入越多份. 按文件名去重.
      * @return 实际新增数量.
      */
-    suspend fun importFromPublicDir(context: Context, files: List<PublicDirManager.PublicFileInfo>): Int {
-        val destDir = longtermDir(context)
+    suspend fun importFromPublicDir(files: List<PublicDirManager.PublicFileInfo>): Int {
+        if (files.isEmpty()) return 0
+        val existingNames = virtualRefStore.refs.first().map { it.displayName }.toSet()
         var added = 0
         files.forEach { info ->
-            val destName = importDestName(context, destDir, info.lastModified)
-            val dest = File(destDir, destName)
-            if (dest.exists()) return@forEach // 已导入过 (重名)
-            val copied = runCatching {
-                val input = context.contentResolver.openInputStream(info.uri) ?: return@runCatching false
-                input.use { src -> dest.outputStream().use { dst -> src.copyTo(dst) } }
-                true
-            }.getOrDefault(false)
-            if (copied) {
-                // 保留源文件修改时间作为 createdAt, 导入的历史录音按原始日期分组.
-                repository.create(dest, readDurationMs(dest), info.lastModified)
-                added++
-            }
+            if (info.fileName in existingNames) return@forEach
+            val rec = Recording(
+                // id 带前缀, 避免与私有目录里恰好同名的文件在列表/删除路由中冲突.
+                id = "public/${info.fileName}",
+                displayName = info.fileName,
+                fileUrl = info.uri.toString(),
+                createdAt = info.lastModified,
+                durationMs = computeAudioDurationMs(context, info.uri),
+                category = RecordingCategory.LONG_TERM,
+                isPublicVirtual = true,
+            )
+            virtualRefStore.add(rec)
+            added++
         }
         return added
     }
-
-    /**
-     * 导入目标文件名: 基于源文件修改时间的本地化日期名, 重名自动加序号.
-     * 中文: "7月23日 14:30.m4a"; 英文: "Jul 23, 14:30.m4a".
-     */
-    private fun importDestName(context: Context, dir: File, lastModified: Long): String {
-        val en = java.util.Locale.getDefault().language == "en"
-        val fmt = if (en) {
-            java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.ENGLISH)
-        } else {
-            java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.CHINA)
-        }
-        val base = fmt.format(java.util.Date(lastModified))
-        var name = "$base.m4a"
-        var i = 2
-        while (File(dir, name).exists()) {
-            name = "$base ($i).m4a"
-            i++
-        }
-        return name
-    }
-
-    /** 读取音频时长 (ms), 失败返回 0. */
-    private fun readDurationMs(file: File): Long = runCatching {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(file.absolutePath)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        } finally {
-            runCatching { retriever.release() }
-        }
-    }.getOrDefault(0L)
 
     // ---- 多选 ----
     /** 全选当前 Tab 下所有录音 (同时进入多选模式). */
@@ -209,16 +155,6 @@ class ListViewModel(
             selected = current.map { it.id }.toSet(),
             expandedId = null,
         )
-    }
-
-    /** 手动保存到公共目录 (备份失败/未授权时供用户手动触发重试). */
-    fun saveToPublic(id: String) {
-        viewModelScope.launch {
-            val rec = _state.value.temporary.firstOrNull { it.id == id }
-                ?: _state.value.longTerm.firstOrNull { it.id == id }
-                ?: return@launch
-            backupToPublic(rec)
-        }
     }
 
     fun enterSelection(id: String) {
@@ -252,9 +188,7 @@ class ListViewModel(
 
     private fun act(id: String, cat: RecordingCategory) {
         viewModelScope.launch {
-            val moved = repository.setCategory(id, cat) ?: return@launch
-            // 移入长期 = 触发自动备份.
-            if (cat == RecordingCategory.LONG_TERM) backupToPublic(moved)
+            repository.setCategory(id, cat)
         }
     }
 }
