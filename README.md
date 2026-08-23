@@ -21,7 +21,7 @@ Echo 是一款**完全离线**的即时回放录音应用。它始终在后台�
 - **🎙 即时回放（Instant Replay）**：常驻环形缓冲，可自定义缓冲时长（默认数分钟），按下暂停即可把"刚才"保存为录音
 - **🔒 隐私安全（Privacy by Design）**：零网络权限；密码（6 位 PIN / 图案锁）+ 恢复密钥（忘记密码时重置）；删除录音需验证
 - **🗂 录音管理**：临时 / 长期分类；日历按日期定位；批量移至长期、批量删除；重命名
-- **💾 公共目录备份**：长期录音自动备份到公共目录，卸载应用也不丢失（支持从备份目录导入还原）
+- **💾 公共目录备份**：长期录音可一键保存到公共目录，卸载应用也不丢失；支持从公共目录导入还原（只建索引，不复制文件）
 - **🎨 精雕细琢的界面**：极光流动频谱条（Gemini Live 风格）、全局动效、玻璃拟态浮层、触感反馈、明亮主题、中英双语
 - **📦 离线可用**：无账号、无广告、无云端依赖；录音全部存于设备本地
 
@@ -29,9 +29,9 @@ Echo 是一款**完全离线**的即时回放录音应用。它始终在后台�
 
 从 **GitHub Releases** 获取最新版（含签名信息）：
 
-- 最新版本：**[v0.29](https://github.com/xfjsssq/Echo/releases/latest)**（正式签名版）
-- 国内加速下载（快）：`https://gh-proxy.com/https://github.com/xfjsssq/Echo/releases/download/v0.29/Echo-0.29.apk`
-- 国内加速下载（备选）：`https://ghfast.top/https://github.com/xfjsssq/Echo/releases/download/v0.29/Echo-0.29.apk`
+- 最新版本：**[v0.30](https://github.com/xfjsssq/Echo/releases/latest)**（正式签名版）
+- 国内加速下载（快）：`https://gh-proxy.com/https://github.com/xfjsssq/Echo/releases/download/v0.30/Echo-0.30.apk`
+- 国内加速下载（备选）：`https://ghfast.top/https://github.com/xfjsssq/Echo/releases/download/v0.30/Echo-0.30.apk`
 
 > **安装后请在"设置 → 关于"中核对 SHA-256 指纹**，与 Release 页面公布的签名一致即为未被篡改的官方安装包。
 
@@ -41,7 +41,7 @@ Echo 是一款**完全离线**的即时回放录音应用。它始终在后台�
 - **UI**：Jetpack Compose（Material 3）
 - **架构**：MVVM + Repository + Flow
 - **音频**：MediaRecorder / MediaMuxer（环形缓冲即时回放）
-- **存储**：应用私有目录 + SAF（公共目录备份）
+- **存储**：应用私有目录 + MediaStore 公共目录（Download/EchoBackup）
 - **最低系统**：Android 8.0（API 26）
 
 ## 📖 如何使用
