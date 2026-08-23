@@ -11,11 +11,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 公共目录备份 (固定路径 Downloads/EchoBackup):
-         API 29+ 走 MediaStore 写入无需权限, 读取需读权限 (33+ READ_MEDIA_AUDIO / 29-32 READ_EXTERNAL_STORAGE);
-         API 26-28 直接写文件需 WRITE_EXTERNAL_STORAGE. -->
+         API 30+ 走 MediaStore Downloads 集合写入无需权限, 读取需读权限 (33+ READ_MEDIA_AUDIO / 30-32 READ_EXTERNAL_STORAGE);
+         API 29 向 Downloads 集合写入要求 WRITE_EXTERNAL_STORAGE; API 26-28 直接写文件需 WRITE_EXTERNAL_STORAGE. -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+        android:maxSdkVersion="29" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
