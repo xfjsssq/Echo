@@ -29,9 +29,9 @@ Echo 是一款**完全离线**的即时回放录音应用。它始终在后台�
 
 从 **GitHub Releases** 获取最新版（含签名信息）：
 
-- 最新版本：**[v0.28](https://github.com/xfjsssq/Echo/releases/latest)**（正式签名版）
-- 国内加速下载（快）：`https://gh-proxy.com/https://github.com/xfjsssq/Echo/releases/download/v0.28/Echo-0.28.apk`
-- 国内加速下载（备选）：`https://ghfast.top/https://github.com/xfjsssq/Echo/releases/download/v0.28/Echo-0.28.apk`
+- 最新版本：**[v0.29](https://github.com/xfjsssq/Echo/releases/latest)**（正式签名版）
+- 国内加速下载（快）：`https://gh-proxy.com/https://github.com/xfjsssq/Echo/releases/download/v0.29/Echo-0.29.apk`
+- 国内加速下载（备选）：`https://ghfast.top/https://github.com/xfjsssq/Echo/releases/download/v0.29/Echo-0.29.apk`
 
 > **安装后请在"设置 → 关于"中核对 SHA-256 指纹**，与 Release 页面公布的签名一致即为未被篡改的官方安装包。
 
