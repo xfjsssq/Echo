@@ -22,8 +22,9 @@ import kotlin.math.ceil
 /**
  * 真正的 N 分钟环形缓冲区.
  *
- * 实现方式: 连续写入固定时长(10s)的 segment 文件到 _buffer/,
- * 维护一个覆盖完整 N 分钟(多保留一段冗余)的滚动队列, 超出则删除最旧段.
+ * 实现方式: 连续写入固定段数的 segment 文件到 _buffer/ (段长 = 缓冲时长 ÷ 段数,
+ * 夹在 [SEG_MIN_MS, SEG_MAX_MS]), 维护一个覆盖完整 N 分钟(多保留一段冗余)的滚动队列,
+ * 超出则删除最旧段.
  * 暂停时将队列内的段 **无损拼接**(MediaExtractor -> MediaMuxer, 容器级, 不重编码)为一个文件,
  * 因此用户拿到的是连续、完整的最近 N 分钟, 边界声音绝不丢失.
  *
@@ -33,8 +34,12 @@ class CircularBuffer(
     private val context: Context,
 ) {
     private val dir: File = bufferDir(context)
-    private val segDurationMs: Long = 10_000L
-    private var maxSegments: Int = DEFAULT_MAX_SEGMENTS
+
+    /** 段长 (ms), 随缓冲档位自适应; 默认 3 分钟档 → 10s. 运行首段开录前由 setBufferSeconds 定档. */
+    private var segDurationMs: Long = SEG_MIN_MS
+
+    /** 滚动队列保留段数 (含 1 段冗余); 默认 3 分钟档 → 21 段. */
+    private var maxSegments: Int = (DEFAULT_3MIN_SEGMENTS + 1)
 
     private val segments = ArrayDeque<File>()
     private var recorder: MediaRecorder? = null
@@ -55,15 +60,37 @@ class CircularBuffer(
     private val mutex = Mutex()
 
     companion object {
-        const val DEFAULT_MAX_SEGMENTS = 19 // ~ 3 min @10s + 冗余
+        /** 滚动队列保留的段数 (不含正在写的当前段). */
+        const val TARGET_SEGMENTS = 20
+
+        /** 段长下限 (ms): 低于此值翻转过于频繁, 编码器重启开销反噬. */
+        const val SEG_MIN_MS = 10_000L
+
+        /** 段长上限 (ms): 高于此值突发被杀时未提交的当前段丢失窗口过大. */
+        const val SEG_MAX_MS = 30_000L
+
+        /** 默认 3 分钟档的保留段数 (3min/10s=18, 向上取整并留余量到 20). */
+        const val DEFAULT_3MIN_SEGMENTS = 20
+
+        /**
+         * 按缓冲时长计算段长 (夹在 [SEG_MIN_MS, SEG_MAX_MS]):
+         * 3 分钟档 → 10s 段 (与旧版固定 10s 行为一致); 10 分钟档 → 30s 段,
+         * 翻转频率降 3 倍 (每 10s 一次编码器 stop/prepare/start 的 CPU 尖峰 → 30s 一次).
+         */
+        fun segmentDurationMsFor(bufferSeconds: Int): Long =
+            (bufferSeconds * 1000L / TARGET_SEGMENTS).coerceIn(SEG_MIN_MS, SEG_MAX_MS)
     }
 
-    /** 根据设置里的缓冲时长更新保留段数. */
+    /** 根据设置里的缓冲时长更新段长与保留段数. */
     fun setBufferSeconds(seconds: Int) = runBlocking {
         mutex.withLock { setBufferSecondsLocked(seconds) }
     }
 
     private fun setBufferSecondsLocked(seconds: Int) {
+        // 段长随档位自适应 (3min→10s 段, 10min→30s 段), 段数按段长反推 + 1 段冗余.
+        // RecordingService 总是先 setBufferSeconds 再 start, 段长在首段开录前确定;
+        // 运行中重复调用同值无副作用.
+        segDurationMs = segmentDurationMsFor(seconds)
         maxSegments = ceil(seconds * 1000.0 / segDurationMs).toInt() + 1
         trimToMax()
     }
@@ -107,7 +134,9 @@ class CircularBuffer(
             rec!!.setAudioSource(MediaRecorder.AudioSource.MIC)
             rec!!.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             rec!!.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            rec!!.setAudioEncodingBitRate(16 * 44100)
+            // 128kbps: AAC 对 44.1kHz 单声道语音的透明音质档 (旧值 16*44100=705.6kbps
+            // 是 PCM 级码率, 对语音纯属浪费). 写盘流量 88KB/s → 16KB/s, 约 5.5 倍降幅.
+            rec!!.setAudioEncodingBitRate(128_000)
             rec!!.setAudioSamplingRate(44100)
             rec!!.setOutputFile(f.absolutePath)
             rec!!.prepare()

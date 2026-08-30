@@ -88,7 +88,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.echo.recorder.R
 import com.echo.recorder.service.AudioAmplitudeMonitor
 import com.echo.recorder.service.RecordingService
@@ -158,10 +161,36 @@ fun RecordScreen(
     val waveReveal = remember { Animatable(0f) }   // 0→1 波形展开
     val logoReturn = remember { Animatable(0f) }   // 0→1 logo 飞回进度
 
+    // 振幅采集器 (独立麦克风通道 + 83Hz 读取循环) 只在"页面可见 && BUFFERING"时运行:
+    // 按 Home 退后台 composition 不销毁, 旧的启停挂 phase 上会导致它在后台空转 ——
+    // 屏幕都关了波形根本没人看, 纯属浪费电. 此处以生命周期为准:
+    // ON_PAUSE 立即停 (回后台零消耗), ON_RESUME 时若仍在缓冲则恢复 (波形无缝接回).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME ->
+                    if (viewModel.state.value.phase == RecordingService.Phase.BUFFERING) {
+                        AudioAmplitudeMonitor.start()
+                    }
+                Lifecycle.Event.ON_PAUSE -> AudioAmplitudeMonitor.stop()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            AudioAmplitudeMonitor.stop()
+        }
+    }
+
     LaunchedEffect(state.phase) {
         when (state.phase) {
             RecordingService.Phase.BUFFERING -> {
-                AudioAmplitudeMonitor.start()
+                // 仅前台启动: 后台时由生命周期观察器在回前台时接管启动.
+                if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    AudioAmplitudeMonitor.start()
+                }
                 // 阶段 1: Logo 物理下落, 直到彻底摊开消失 (900ms, 重力加速)
                 animPhase = AnimPhase.FALLING
                 dropProgress.snapTo(0f)

@@ -85,8 +85,13 @@ class RecordingService : Service() {
         const val DEFAULT_BUFFER_SECONDS = 180
         const val CHANNEL_ID = "echo_recording"
         const val NOTIFICATION_ID = 1001
-        /** 文案轮换间隔 (ms). */
-        const val ROTATE_INTERVAL_MS = 4000L
+        /**
+         * 文案轮换间隔 (ms).
+         * 2026-08-23 功耗优化: 4s→60s. 每次轮换都要重建整个 Notification 并 notify,
+         * 后台一整晚仅此一项就上千次系统调用; 拟人化文案保留, 换字频率降为可感知阈值以下
+         * (1 分钟内盯着通知看的场景极少), 耗电开销降 15 倍.
+         */
+        const val ROTATE_INTERVAL_MS = 60_000L
         const val ACTION_START = "com.echo.recorder.action.START"
         const val ACTION_STOP = "com.echo.recorder.action.STOP"
         const val ACTION_PAUSE = "com.echo.recorder.action.PAUSE"
