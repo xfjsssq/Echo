@@ -231,6 +231,8 @@
     <string name="export_failed">保存失败，请重试</string>
     <string name="import_done">已加入 %1$d 个录音</string>
     <string name="import_no_new">没有可导入的新文件</string>
+    <string name="action_capture_buffer">截取保存</string>
+    <string name="capture_done">已截取最近 %1$s</string>
     <string name="public_dir_delete_note">将永久删除备份文件夹中的原始文件，不可恢复。应用内的录音不受影响。</string>
     <string name="public_dir_delete_failed">删除失败，请重试</string>
     <string name="public_dir_password_required_title">需要先设置密码</string>

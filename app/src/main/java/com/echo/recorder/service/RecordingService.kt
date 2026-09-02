@@ -12,6 +12,9 @@ import android.os.Handler
 import android.os.Binder
 import android.os.IBinder
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import com.echo.recorder.R
 import com.echo.recorder.ServiceLocator
@@ -21,6 +24,7 @@ import com.echo.recorder.domain.model.RecordingCategory
 import com.echo.recorder.domain.recording.RecordingRepository
 import com.echo.recorder.i18n.LocaleManager
 import com.echo.recorder.settings.SettingsRepository
+import com.echo.recorder.ui.formatElapsed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,6 +81,10 @@ class RecordingService : Service() {
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
+    /** 快照截取进行中 (防抖: 拼接耗时内忽略连按). */
+    @Volatile
+    private var capturing = false
+
     /** 彻底退出标记: 由 [shutdownCleanly] 置位, onDestroy 据此跳过紧急保存. */
     @Volatile
     private var cleanShutdown = false
@@ -85,6 +93,14 @@ class RecordingService : Service() {
         const val DEFAULT_BUFFER_SECONDS = 180
         const val CHANNEL_ID = "echo_recording"
         const val NOTIFICATION_ID = 1001
+
+        /**
+         * 活动服务实例 (进程内单例): 供 MainActivity 前台音量键组合直达 [captureBuffer],
+         * 免走 startService (避免未录音时误拉起前台服务). onCreate 赋值 / onDestroy 置空.
+         */
+        @Volatile
+        var instance: RecordingService? = null
+            private set
         /**
          * 文案轮换间隔 (ms).
          * 2026-08-23 功耗优化: 4s→60s. 每次轮换都要重建整个 Notification 并 notify,
@@ -97,6 +113,7 @@ class RecordingService : Service() {
         const val ACTION_PAUSE = "com.echo.recorder.action.PAUSE"
         const val ACTION_SAVE = "com.echo.recorder.action.SAVE"
         const val ACTION_DELETE = "com.echo.recorder.action.DELETE"
+        const val ACTION_CAPTURE = "com.echo.recorder.action.CAPTURE"
         const val ACTION_RESTART = "com.echo.recorder.action.RESTART"
         const val EXTRA_SAVE_PENDING = "extra_save_pending"
         const val ACTION_KILL = "com.echo.recorder.action.KILL"
@@ -110,6 +127,7 @@ class RecordingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannel()
         // 一次同步读取设置 (DataStore 首读), 之后全部走缓存, 不在主线程重复阻塞.
         val settings = SettingsRepository(this)
@@ -132,6 +150,9 @@ class RecordingService : Service() {
 
     /** 读取本地化字符串 (跟随 DataStore 语言设置). */
     private fun str(resId: Int): String = localizedContext.getString(resId)
+
+    /** 读取带格式参数的本地化字符串 (如"已截取最近 %1$s"). */
+    private fun str(resId: Int, vararg args: Any?): String = localizedContext.getString(resId, *args)
 
     /** 监听 DataStore 语言设置, 变化时更新本地化 Context 并重建通知. */
     private fun observeLanguage() {
@@ -164,6 +185,7 @@ class RecordingService : Service() {
             ACTION_PAUSE -> pause()
             ACTION_SAVE -> save()
             ACTION_DELETE -> deletePending()
+            ACTION_CAPTURE -> captureBuffer()
             ACTION_STOP -> {
                 buffer?.release()
                 buffer = null
@@ -225,6 +247,60 @@ class RecordingService : Service() {
             } finally {
                 _saving.value = false
             }
+        }
+    }
+
+    /**
+     * 快照截取: 把当前缓冲的"最近 N 分钟"存为一份临时录音, **不中断缓冲**.
+     *
+     * 触发源: 通知/锁屏"截取"按钮 (ACTION_CAPTURE) 与前台音量上下双键 (MainActivity).
+     * - 仅 BUFFERING 且不在保存/截取中时有效, 其余状态静默忽略;
+     * - 不足 1 秒 (刚开播/极快连按) 静默跳过, 不产生空片段也不打扰;
+     * - 成功: 双脉冲震动 + 通知文案即时反馈 (下次轮换 ≤60s 自动覆盖).
+     */
+    fun captureBuffer() {
+        if (_phase.value != Phase.BUFFERING) return
+        if (_saving.value || capturing) return
+        val cb = buffer ?: return
+        capturing = true
+        scope.launch {
+            val dest = File(pendingDir(this@RecordingService), "echo_${System.currentTimeMillis()}.m4a")
+            try {
+                val dur = cb.snapshot(dest)
+                if (dur >= MIN_SAVE_DURATION_MS) {
+                    repo().create(dest, dur)
+                    vibrateCapture(true)
+                    updateNotificationText(str(R.string.capture_done, formatElapsed(dur)))
+                } else {
+                    runCatching { if (dest.exists()) dest.delete() }
+                }
+            } catch (_: Exception) {
+                // 截取失败 (拼接异常/磁盘满等): 清残件 + 单长脉冲告知.
+                // 绝不让异常逃出协程 —— SupervisorJob 作用域无异常处理器, 逃逸即崩溃.
+                runCatching { if (dest.exists()) dest.delete() }
+                vibrateCapture(false)
+            } finally {
+                capturing = false
+            }
+        }
+    }
+
+    /** 截取结果震动反馈 (无屏也可感知): 成功=双短脉冲, 失败=单长脉冲. */
+    private fun vibrateCapture(success: Boolean) {
+        val vib: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(VIBRATOR_SERVICE) as? Vibrator
+        }
+        if (vib == null || !vib.hasVibrator()) return
+        runCatching {
+            val effect = if (success) {
+                VibrationEffect.createWaveform(longArrayOf(0, 45, 90, 45), -1)
+            } else {
+                VibrationEffect.createWaveform(longArrayOf(0, 220), -1)
+            }
+            vib.vibrate(effect)
         }
     }
 
@@ -373,6 +449,8 @@ class RecordingService : Service() {
             .setOngoing(true)
             .setSilent(true)
             .setOnlyAlertOnce(true)
+            // 锁屏直接可见可操作: "截取"按钮是不解锁抓取刚才几分钟的关键路径.
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
         when (_phase.value) {
             // BUFFERING + saving: 无操作按钮, 文案显示"正在保存...".
@@ -381,6 +459,11 @@ class RecordingService : Service() {
                     android.R.drawable.ic_media_pause,
                     str(R.string.notification_pause),
                     pendingIntent(ACTION_PAUSE, pendingFlag),
+                )
+                builder.addAction(
+                    android.R.drawable.ic_menu_save,
+                    str(R.string.action_capture_buffer),
+                    pendingIntent(ACTION_CAPTURE, pendingFlag),
                 )
             }
             Phase.IDLE -> { /* 无操作按钮 */ }
@@ -420,6 +503,7 @@ class RecordingService : Service() {
         if (!cleanShutdown) {
             saveUnprocessed()
         }
+        if (instance === this) instance = null
         stopRotate()
         languageJob?.cancel(); languageJob = null
         buffer?.release(); buffer = null

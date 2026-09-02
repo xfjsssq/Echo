@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 公共目录备份 (固定路径 Downloads/EchoBackup):
          API 30+ 走 MediaStore Downloads 集合写入无需权限, 读取需读权限 (33+ READ_MEDIA_AUDIO / 30-32 READ_EXTERNAL_STORAGE);

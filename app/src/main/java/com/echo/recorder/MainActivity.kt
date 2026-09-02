@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +18,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.echo.recorder.auth.SessionAuth
 import com.echo.recorder.i18n.LocaleManager
+import com.echo.recorder.service.RecordingService
 import com.echo.recorder.settings.SettingsRepository
 import com.echo.recorder.ui.theme.EchoTheme
 import kotlinx.coroutines.flow.first
@@ -96,5 +99,39 @@ class MainActivity : ComponentActivity() {
         if (!hasPermission) {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    // ---- 音量上下双键 = 快照截取 (第一期: 仅 Echo 前台生效) ----
+    private var comboFirstKey = 0
+    private var comboFirstAt = 0L
+
+    /**
+     * 音量上+下键在 [COMBO_WINDOW_MS] 内先后按下 → 触发 [RecordingService.captureBuffer]
+     * 并消费事件 (第二次按键不再调音量). 单键按下完全放行, 正常调音量不受影响;
+     * 长按自动重复 (repeatCount>0) 不参与配对, 防止长按误触.
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if ((keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) &&
+            event?.repeatCount == 0
+        ) {
+            val now = SystemClock.elapsedRealtime()
+            if (comboFirstKey != 0 && keyCode != comboFirstKey && now - comboFirstAt <= COMBO_WINDOW_MS) {
+                comboFirstKey = 0
+                val svc = RecordingService.instance
+                if (svc != null && svc.phase.value == RecordingService.Phase.BUFFERING) {
+                    svc.captureBuffer()
+                    return true
+                }
+            } else {
+                comboFirstKey = keyCode
+                comboFirstAt = now
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    companion object {
+        /** 双键判定窗口: 真人"同时按"两事件间隔通常 <150ms. */
+        private const val COMBO_WINDOW_MS = 300L
     }
 }

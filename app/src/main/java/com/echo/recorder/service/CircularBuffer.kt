@@ -185,6 +185,17 @@ class CircularBuffer(
         mutex.withLock { saveLocked(dest) }
     }
 
+    /**
+     * 快照: 截取当前缓冲为一份完整音频 -> dest, **不中断缓冲**.
+     *
+     * 封口当前段后**立即续录**, 已封口段在录音继续的同时后台无损拼接 ——
+     * 停录间隙压缩到与常规段翻转同级 (<100ms), 谈话连续性几乎无损.
+     * 调用方保持 phase=BUFFERING 不变. 返回快照时长(ms); 缓冲为空返回 0.
+     */
+    fun snapshot(dest: File): Long = runBlocking {
+        mutex.withLock { snapshotLocked(dest) }
+    }
+
     private suspend fun saveLocked(dest: File): Long {
         rollJob?.cancel(); rollJob = null
         stopRecorder()
@@ -193,6 +204,29 @@ class CircularBuffer(
         // 清空缓冲, 立即重新开始缓冲.
         clearSegments()
         startLocked()
+        return durationMs
+    }
+
+    /**
+     * 快照的锁内实现: 封口 -> 立即续录 -> 录音继续的同时拼接旧段.
+     * 与 [saveLocked] 的区别: 续录先于拼接, 停录窗口只有段翻转级.
+     * mutex 全程持有, 拼接期间 rollLoop 到点翻转会在锁上稍等 (段录得稍长, 无损失).
+     */
+    private suspend fun snapshotLocked(dest: File): Long {
+        rollJob?.cancel(); rollJob = null
+        // 1. 封口当前段 (普通翻转级间隙).
+        stopRecorder()
+        val toConcat = segments.filter { it.exists() && it.length() > 0 }
+        // 2. 只摘引用不删文件 (拼接还要读), 立即续录新段 + 重启翻转循环.
+        segments.clear()
+        startLocked()
+        // 3. 拼接已封口旧段; 成败都清理旧段文件. 若进程恰在此间被杀,
+        //    残留段由冷启动 rescueOrphanedSegments 按时间序救援, 内容不丢.
+        val durationMs = try {
+            if (toConcat.isEmpty()) 0L else concatenateSegments(toConcat, dest)
+        } finally {
+            toConcat.forEach { runCatching { it.delete() } }
+        }
         return durationMs
     }
 

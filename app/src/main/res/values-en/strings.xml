@@ -214,6 +214,8 @@
     <string name="export_failed">Save failed. Please try again.</string>
     <string name="import_done">Added %1$d recording(s)</string>
     <string name="import_no_new">No new files to import</string>
+    <string name="action_capture_buffer">Capture clip</string>
+    <string name="capture_done">Captured the last %1$s</string>
     <string name="public_dir_delete_note">This permanently deletes the original file in the backup folder. It cannot be undone. Recordings inside the app are not affected.</string>
     <string name="public_dir_delete_failed">Failed to delete. Please try again.</string>
     <string name="public_dir_password_required_title">Password Required</string>
